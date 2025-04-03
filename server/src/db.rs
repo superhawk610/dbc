@@ -83,8 +83,15 @@ pub async fn connect(config: &Config) -> eyre::Result<Connection> {
 
 #[derive(Debug, Serialize)]
 pub struct QueryResult {
-    pub columns: Vec<String>,
+    pub columns: Vec<QueryResultColumn>,
     pub rows: Vec<Vec<serde_json::Value>>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct QueryResultColumn {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub type_: String,
 }
 
 // TODO: probably need to optimize this per-database to filter out things
@@ -106,7 +113,10 @@ pub async fn query(
     let columns = stmt
         .columns()
         .iter()
-        .map(|col| col.name().to_owned())
+        .map(|col| QueryResultColumn {
+            name: col.name().to_owned(),
+            type_: col.type_().name().to_owned(),
+        })
         .collect::<Vec<_>>();
 
     let mut data_rows: Vec<Vec<serde_json::Value>> = Vec::with_capacity(rows.len());
@@ -157,7 +167,10 @@ fn to_json(row: &tokio_postgres::Row, col: &tokio_postgres::Column) -> Option<se
             let val: Option<f32> = row.get(col.name());
             Some(val.into())
         }
-        Type::JSONB | Type::JSON => row.get(col.name()),
+        Type::JSONB | Type::JSON => {
+            let val: Option<serde_json::Value> = row.get(col.name());
+            Some(val.into())
+        }
         Type::DATE => {
             use time::format_description::well_known::Iso8601;
             let val: Option<time::Date> = row.get(col.name());

@@ -24,17 +24,11 @@ function App() {
   return (
     <div className="flex flex-col items-stretch w-screen h-screen">
       <Navbar />
-      <Editor ref={editorRef} />
-      <div className="flex flex-row justify-end gap-1 py-2 px-4">
-        <button
-          type="button"
-          className="btn btn-sm btn-primary"
-          onClick={dispatchQuery}
-        >
-          Query
-        </button>
-      </div>
-
+      <Editor
+        ref={editorRef}
+        onClick={dispatchQuery}
+        onClickLabel="Query ⌘⏎"
+      />
       <div className="divider" />
 
       <div className="card shadow-xl m-2 overflow-auto">
@@ -42,8 +36,13 @@ function App() {
           <table className="table table-zebra table-pin-rows table-compact">
             <thead>
               <tr>
-                {res.columns.map((column: string) => (
-                  <th key={column}>{column}</th>
+                {res.columns.map((column: any) => (
+                  <th key={column.name}>
+                    {column.name}
+                    <span className="pl-2 font-normal text-xs text-gray-500">
+                      {column.type}
+                    </span>
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -51,20 +50,27 @@ function App() {
               {res.rows.map((row: any, idx: number) => (
                 <tr key={idx}>
                   {row.map((value: any, idx: number) => (
-                    <td key={idx}>{value}</td>
+                    <td key={idx}>
+                      {value === true
+                        ? "true"
+                        : value === false
+                        ? "false"
+                        : value === null
+                        ? <span className="text-gray-500">&lt;null&gt;</span>
+                        : Array.isArray(value)
+                        ? JSON.stringify(value)
+                        : value}
+                    </td>
                   ))}
                 </tr>
               ))}
             </tbody>
-            <tfoot>
-              <tr>
-                <td colSpan={res.columns.length}>
-                  {res.rows.length} rows
-                </td>
-              </tr>
-            </tfoot>
           </table>
         )}
+      </div>
+
+      <div className="m-4 text-sm text-gray-300">
+        {res.rows.length} rows
       </div>
     </div>
   );
