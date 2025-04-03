@@ -1,8 +1,10 @@
 use poem::{
     EndpointExt, Route, Server, get,
     listener::TcpListener,
+    post,
     web::{Data, Json},
 };
+use serde::Deserialize;
 use std::sync::Arc;
 
 #[tokio::main]
@@ -25,6 +27,7 @@ async fn main() -> eyre::Result<()> {
 
     let router = Route::new()
         .at("/", get(handler))
+        .at("/query", post(handle_query))
         .with(poem::middleware::Cors::new())
         .with(poem::middleware::Tracing)
         .data(state);
@@ -40,4 +43,18 @@ async fn main() -> eyre::Result<()> {
 async fn handler(Data(state): Data<&Arc<dbc::State>>) -> eyre::Result<Json<dbc::db::QueryResult>> {
     let conn = state.pool.get_conn().await?;
     Ok(Json(dbc::db::list_tables(&conn).await?))
+}
+
+#[derive(Deserialize)]
+struct Query {
+    query: String,
+}
+
+#[poem::handler]
+async fn handle_query(
+    Data(state): Data<&Arc<dbc::State>>,
+    Json(query): Json<Query>,
+) -> eyre::Result<Json<dbc::db::QueryResult>> {
+    let conn = state.pool.get_conn().await?;
+    Ok(Json(dbc::db::query(&conn, &query.query, &[]).await?))
 }

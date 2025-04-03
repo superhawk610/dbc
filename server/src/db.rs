@@ -157,9 +157,37 @@ fn to_json(row: &tokio_postgres::Row, col: &tokio_postgres::Column) -> Option<se
             let val: Option<f32> = row.get(col.name());
             Some(val.into())
         }
-        _ => {
-            tracing::warn!("unsupported type: {:?}", col.type_());
-            None
+        Type::JSONB | Type::JSON => row.get(col.name()),
+        Type::DATE => {
+            use time::format_description::well_known::Iso8601;
+            let val: Option<time::Date> = row.get(col.name());
+            Some(val.map(|d| d.format(&Iso8601::DATE).unwrap()).into())
         }
+        Type::TIME => {
+            use time::format_description::well_known::Iso8601;
+            let val: Option<time::Time> = row.get(col.name());
+            Some(val.map(|t| t.format(&Iso8601::TIME).unwrap()).into())
+        }
+        Type::TIMESTAMP => {
+            use time::format_description::well_known::Iso8601;
+            let val: Option<time::PrimitiveDateTime> = row.get(col.name());
+            Some(val.map(|t| t.format(&Iso8601::DATE_TIME).unwrap()).into())
+        }
+        Type::TIMESTAMPTZ => {
+            use time::format_description::well_known::Iso8601;
+            let val: Option<time::OffsetDateTime> = row.get(col.name());
+            Some(val.map(|t| t.format(&Iso8601::DEFAULT).unwrap()).into())
+        }
+        _ => match col.type_().name() {
+            // citext is a case-insensitive text type
+            "citext" => {
+                let val: Option<&str> = row.get(col.name());
+                Some(val.into())
+            }
+            _ => {
+                tracing::warn!("unsupported type: {:?}", col.type_());
+                None
+            }
+        },
     }
 }

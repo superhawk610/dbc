@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
-import { get } from "./api.ts";
+import { useEffect, useRef, useState } from "react";
+import { get, post } from "./api.ts";
 
 import Navbar from "./components/Navbar.tsx";
+import Editor from "./components/Editor.tsx";
 
 function App() {
-  const [count, setCount] = useState(0);
+  const editorRef = useRef<any | null>(null);
   const [res, setRes] = useState<any | null>(null);
 
   useEffect(() => {
@@ -14,24 +15,27 @@ function App() {
     })();
   }, []);
 
+  async function dispatchQuery() {
+    const query = editorRef.current!.getContents();
+    const res = await post("/query", { query });
+    setRes(res);
+  }
+
   return (
     <div className="flex flex-col items-stretch w-screen h-screen">
       <Navbar />
-
-      <div className="card shadow-xl m-2">
-        <div className="card-body">
-          <h2 className="card-title">Hello World</h2>
-          <div className="card-actions">
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => setCount((count) => count + 1)}
-            >
-              count is {count}
-            </button>
-          </div>
-        </div>
+      <Editor ref={editorRef} />
+      <div className="flex flex-row justify-end gap-1 py-2 px-4">
+        <button
+          type="button"
+          className="btn btn-sm btn-primary"
+          onClick={dispatchQuery}
+        >
+          Query
+        </button>
       </div>
+
+      <div className="divider" />
 
       <div className="card shadow-xl m-2 overflow-auto">
         {res && (

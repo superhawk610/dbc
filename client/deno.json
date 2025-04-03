@@ -13,6 +13,7 @@
   },
   "imports": {
     "@deno/vite-plugin": "npm:@deno/vite-plugin@^1.0.4",
+    "@monaco-editor/react": "npm:@monaco-editor/react@^4.7.0",
     "@tailwindcss/vite": "npm:@tailwindcss/vite@^4.1.2",
     "@types/react": "npm:@types/react@^19.0.10",
     "@types/react-dom": "npm:@types/react-dom@^19.0.4",

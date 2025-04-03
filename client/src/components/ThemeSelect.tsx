@@ -1,3 +1,4 @@
+import React from "react";
 import { THEMES } from "../const.ts";
 
 const ACTIVE_THEME = globalThis.localStorage.getItem("theme");
@@ -37,8 +38,8 @@ export default function ThemeSelect() {
         </li>
 
         {THEMES.map((theme) => (
-          <>
-            <li key={theme}>
+          <React.Fragment key={theme}>
+            <li>
               <input
                 type="radio"
                 name="theme-dropdown"
@@ -54,7 +55,7 @@ export default function ThemeSelect() {
               />
             </li>
             {theme === "dark" && <li className="divider my-0" />}
-          </>
+          </React.Fragment>
         ))}
       </ul>
     </div>
