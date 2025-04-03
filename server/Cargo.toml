@@ -1,0 +1,17 @@
+[package]
+name = "dbc"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bon = "3.5.1"
+eyre = "0.6.12"
+native-tls = "0.2.14"
+poem = { version = "3.1.8", features = ["eyre06"] }
+postgres-native-tls = "0.5.1"
+serde = "1.0.219"
+serde_json = "1.0.140"
+tokio = { version = "1.44.1", features = ["full"] }
+tokio-postgres = "0.7.13"
+tracing = "0.1.41"
+tracing-subscriber = "0.3.19"
