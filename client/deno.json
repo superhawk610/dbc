@@ -13,11 +13,14 @@
   },
   "imports": {
     "@deno/vite-plugin": "npm:@deno/vite-plugin@^1.0.4",
+    "@tailwindcss/vite": "npm:@tailwindcss/vite@^4.1.2",
     "@types/react": "npm:@types/react@^19.0.10",
     "@types/react-dom": "npm:@types/react-dom@^19.0.4",
     "@vitejs/plugin-react": "npm:@vitejs/plugin-react@^4.3.4",
+    "daisyui": "npm:daisyui@^5.0.12",
     "react": "npm:react@^19.0.0",
     "react-dom": "npm:react-dom@^19.0.0",
+    "tailwindcss": "npm:tailwindcss@^4.1.2",
     "vite": "npm:vite@^6.1.1"
   }
 }
