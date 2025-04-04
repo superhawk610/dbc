@@ -1,4 +1,4 @@
-import {
+import React, {
   forwardRef,
   useEffect,
   useImperativeHandle,
@@ -34,10 +34,11 @@ async function fetchTheme(theme: string, filename: string, ref: MonacoRef) {
 export interface Props {
   onClick?: () => void;
   onClickLabel?: string;
+  children?: React.ReactNode;
 }
 
 export default forwardRef(
-  function Editor({ onClick, onClickLabel }: Props, ref) {
+  function Editor({ onClick, onClickLabel, children }: Props, ref) {
     const [showEditor, setShowEditor] = useState(false);
     const monacoRef = useRef({ definedThemes: {} } as MonacoRef);
     const [themes, setThemes] = useState<Record<string, string>>(
@@ -49,6 +50,8 @@ export default forwardRef(
 
     useImperativeHandle(ref, () => ({
       getContents: () => monacoRef.current.editor.getValue(),
+      insert: (text: string) =>
+        monacoRef.current.editor.trigger("keyboard", "type", { text }),
     }));
 
     useEffect(() => {
@@ -69,9 +72,11 @@ export default forwardRef(
 
     return (
       <>
-        <div style={{ height: "30vh", flex: 0 }}>
-          {showEditor
-            ? (
+        <div className="h-[30vh] flex-0 flex flex-row">
+          {children}
+
+          <div className="flex-1">
+            {!showEditor ? <div className="h-[30vh]" /> : (
               <MonacoEditor
                 height="30vh"
                 theme={activeTheme}
@@ -102,12 +107,12 @@ export default forwardRef(
                   }
                 }}
               />
-            )
-            : <div style={{ height: "30vh" }} />}
+            )}
+          </div>
         </div>
 
         <div className="flex flex-row justify-between gap-1 py-2 px-4">
-          <div>
+          <div className="flex flex-row gap-1">
             <select
               className="select select-xs select-ghost m-2"
               value={activeTheme}
@@ -128,7 +133,44 @@ export default forwardRef(
                 </option>
               ))}
             </select>
+
+            <select className="select select-xs select-ghost m-2">
+              <option value="a">
+                conn-a
+              </option>
+              <option value="b">
+                conn-b
+              </option>
+              <option value="c">
+                conn-c
+              </option>
+            </select>
+
+            <select className="select select-xs select-ghost m-2">
+              <option value="a">
+                schema-a
+              </option>
+              <option value="b">
+                schema-b
+              </option>
+              <option value="c">
+                schema-c
+              </option>
+            </select>
+
+            <select className="select select-xs select-ghost m-2">
+              <option value="a">
+                database-a
+              </option>
+              <option value="b">
+                database-b
+              </option>
+              <option value="c">
+                database-c
+              </option>
+            </select>
           </div>
+
           <div>
             {onClickLabel && (
               <button

@@ -33,7 +33,7 @@ impl Drop for CheckedOutConnection {
 
             // if this connection has terminated, we don't need to put it back into the pool;
             // instead, ask the pool to spawn a new connection
-            if let Ok(_) = conn.rx.try_recv() {
+            if conn.rx.try_recv().is_ok() {
                 pool.spawn_conn().await.unwrap();
             } else {
                 pool.conns.push_front(conn);

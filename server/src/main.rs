@@ -9,16 +9,24 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
+    dotenv::dotenv().ok();
+
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::DEBUG)
         .with_test_writer()
         .init();
 
     let cfg = dbc::db::Config::builder()
-        .username("pepsico".to_owned())
-        .password("development".to_owned())
-        .port(9650)
-        .database("rtb_proxy_repo".to_owned())
+        .host(std::env::var("DB_HOST").expect("DB_HOST is set"))
+        .port(
+            std::env::var("DB_PORT")
+                .expect("DB_PORT is set")
+                .parse()
+                .expect("DB_PORT is valid"),
+        )
+        .username(std::env::var("DB_USER").expect("DB_USER is set"))
+        .password(std::env::var("DB_PASS").expect("DB_PASS is set"))
+        .database(std::env::var("DB_DATABASE").expect("DB_DATABASE is set"))
         .build();
 
     let pool = dbc::pool::ConnectionPool::new(cfg).await;
@@ -32,9 +40,12 @@ async fn main() -> eyre::Result<()> {
         .with(poem::middleware::Tracing)
         .data(state);
 
-    Server::new(TcpListener::bind("127.0.0.1:4000"))
-        .run(router)
-        .await?;
+    Server::new(TcpListener::bind(&format!(
+        "127.0.0.1:{}",
+        std::env::var("API_PORT").expect("API_PORT is set")
+    )))
+    .run(router)
+    .await?;
 
     Ok(())
 }

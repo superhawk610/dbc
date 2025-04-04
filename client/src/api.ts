@@ -1,4 +1,4 @@
-const baseUrl = "http://localhost:4000";
+const baseUrl = `http://${import.meta.env.VITE_API_BASE}`;
 
 const req = (method: string) => {
   return async (path: string, data?: Record<string, unknown>) => {
