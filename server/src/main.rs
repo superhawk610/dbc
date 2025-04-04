@@ -33,11 +33,33 @@ async fn main() -> eyre::Result<()> {
 
     let state = Arc::new(dbc::State { pool });
 
+    async fn format_eyre<E: poem::Endpoint>(
+        next: E,
+        req: poem::Request,
+    ) -> poem::Result<poem::Response> {
+        use poem::IntoResponse;
+        let mut res = next.call(req).await?.into_response();
+
+        // eyre errors are converted to text, but the content-type header isn't set
+        if res.content_type().is_none() {
+            res = res.set_content_type("text/plain");
+        }
+
+        Ok(res)
+    }
+
     let router = Route::new()
-        .at("/", get(handler))
+        .nest(
+            "/db",
+            Route::new()
+                .at("/databases", get(get_databases))
+                .at("/schemas", get(get_schemas))
+                .at("/tables", get(get_tables)),
+        )
         .at("/query", post(handle_query))
         .with(poem::middleware::Cors::new())
         .with(poem::middleware::Tracing)
+        .around(format_eyre)
         .data(state);
 
     Server::new(TcpListener::bind(&format!(
@@ -51,7 +73,25 @@ async fn main() -> eyre::Result<()> {
 }
 
 #[poem::handler]
-async fn handler(Data(state): Data<&Arc<dbc::State>>) -> eyre::Result<Json<dbc::db::QueryResult>> {
+async fn get_databases(
+    Data(state): Data<&Arc<dbc::State>>,
+) -> eyre::Result<Json<dbc::db::QueryResult>> {
+    let conn = state.pool.get_conn().await?;
+    Ok(Json(dbc::db::list_databases(&conn).await?))
+}
+
+#[poem::handler]
+async fn get_schemas(
+    Data(state): Data<&Arc<dbc::State>>,
+) -> eyre::Result<Json<dbc::db::QueryResult>> {
+    let conn = state.pool.get_conn().await?;
+    Ok(Json(dbc::db::list_schemas(&conn).await?))
+}
+
+#[poem::handler]
+async fn get_tables(
+    Data(state): Data<&Arc<dbc::State>>,
+) -> eyre::Result<Json<dbc::db::QueryResult>> {
     let conn = state.pool.get_conn().await?;
     Ok(Json(dbc::db::list_tables(&conn).await?))
 }

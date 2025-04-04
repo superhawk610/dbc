@@ -34,11 +34,12 @@ async function fetchTheme(theme: string, filename: string, ref: MonacoRef) {
 export interface Props {
   onClick?: () => void;
   onClickLabel?: string;
-  children?: React.ReactNode;
+  sidebar?: React.ReactNode;
+  toolbar?: React.ReactNode;
 }
 
 export default forwardRef(
-  function Editor({ onClick, onClickLabel, children }: Props, ref) {
+  function Editor({ onClick, onClickLabel, sidebar, toolbar }: Props, ref) {
     const [showEditor, setShowEditor] = useState(false);
     const monacoRef = useRef({ definedThemes: {} } as MonacoRef);
     const [themes, setThemes] = useState<Record<string, string>>(
@@ -50,6 +51,7 @@ export default forwardRef(
 
     useImperativeHandle(ref, () => ({
       getContents: () => monacoRef.current.editor.getValue(),
+      focus: () => monacoRef.current.editor.focus(),
       insert: (text: string) =>
         monacoRef.current.editor.trigger("keyboard", "type", { text }),
     }));
@@ -73,7 +75,7 @@ export default forwardRef(
     return (
       <>
         <div className="h-[30vh] flex-0 flex flex-row">
-          {children}
+          {sidebar}
 
           <div className="flex-1">
             {!showEditor ? <div className="h-[30vh]" /> : (
@@ -81,7 +83,7 @@ export default forwardRef(
                 height="30vh"
                 theme={activeTheme}
                 defaultLanguage="sql"
-                defaultValue="-- enter query here"
+                defaultValue={"-- enter query here\n"}
                 options={{
                   fontSize: 15,
                   minimap: {
@@ -90,6 +92,8 @@ export default forwardRef(
                 }}
                 onMount={(editor: editorNS.IStandaloneCodeEditor) => {
                   monacoRef.current.editor = editor;
+                  editor.setPosition({ lineNumber: 2, column: 0 });
+                  editor.focus();
 
                   if (onClickLabel) {
                     editor.addAction({
@@ -114,7 +118,7 @@ export default forwardRef(
         <div className="flex flex-row justify-between gap-1 py-2 px-4">
           <div className="flex flex-row gap-1">
             <select
-              className="select select-xs select-ghost m-2"
+              className="select select-xs select-ghost m-2 w-[200px]"
               value={activeTheme}
               onChange={async (e) => {
                 const newTheme = e.target.value;
@@ -134,41 +138,7 @@ export default forwardRef(
               ))}
             </select>
 
-            <select className="select select-xs select-ghost m-2">
-              <option value="a">
-                conn-a
-              </option>
-              <option value="b">
-                conn-b
-              </option>
-              <option value="c">
-                conn-c
-              </option>
-            </select>
-
-            <select className="select select-xs select-ghost m-2">
-              <option value="a">
-                schema-a
-              </option>
-              <option value="b">
-                schema-b
-              </option>
-              <option value="c">
-                schema-c
-              </option>
-            </select>
-
-            <select className="select select-xs select-ghost m-2">
-              <option value="a">
-                database-a
-              </option>
-              <option value="b">
-                database-b
-              </option>
-              <option value="c">
-                database-c
-              </option>
-            </select>
+            {toolbar}
           </div>
 
           <div>

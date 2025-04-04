@@ -8,23 +8,41 @@ function App() {
   const editorRef = useRef<any | null>(null);
   const [res, setRes] = useState<any | null>(null);
   const [tables, setTables] = useState<any | null>(null);
+  const [databases, setDatabases] = useState(null);
+  const [schemas, setSchemas] = useState(null);
+  const [error, setError] = useState<string | null>(null);
 
   // TODO: more ergonomic API for reading rows from server
   // TODO: fetch available schemas and databases
   // TODO: switch between multiple connections
   useEffect(() => {
     (async () => {
-      const res = await get("/");
-      setRes(res);
-      setTables(res);
+      const databases = await get("/db/databases");
+      const schemas = await get("/db/schemas");
+      const tables = await get("/db/tables");
+
+      setDatabases(databases);
+      setSchemas(schemas);
+      setTables(tables);
+
+      setRes(databases);
     })();
   }, []);
 
   async function dispatchQuery() {
     const query = editorRef.current!.getContents();
-    const res = await post("/query", { query });
-    setRes(res);
+    try {
+      const res = await post("/query", { query });
+      setError(null);
+      setRes(res);
+    } catch (err) {
+      console.log("caught");
+      setError((err as any).message);
+      setRes(null);
+    }
   }
+
+  console.log({ res });
 
   return (
     <div className="flex flex-col items-stretch w-screen h-screen">
@@ -33,35 +51,69 @@ function App() {
         ref={editorRef}
         onClick={dispatchQuery}
         onClickLabel="Query ⌘⏎"
-      >
-        <div className="w-[300px] border-r-2 border-gray-700 overflow-auto">
-          <ul className="menu w-full">
-            {!tables
-              ? (
-                <li>
-                  <span className="text-gray-300">loading...</span>
-                </li>
-              )
-              : tables.rows.map((row) => (
-                <li key={row[2]}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      editorRef.current.insert(row[2]);
-                    }}
-                  >
-                    {row[2]}
-                  </button>
-                </li>
-              ))}
-          </ul>
-        </div>
-      </Editor>
-      <div className="divider" />
+        sidebar={
+          <div className="w-[300px] border-r-2 border-gray-700 overflow-auto">
+            <ul className="menu w-full">
+              {!tables
+                ? (
+                  <li>
+                    <span className="text-gray-300">loading...</span>
+                  </li>
+                )
+                : tables.rows.map((row) => (
+                  <li key={row[2]}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        editorRef.current.insert(row[2]);
+                        editorRef.current.focus();
+                      }}
+                    >
+                      {row[2]}
+                    </button>
+                  </li>
+                ))}
+            </ul>
+          </div>
+        }
+        toolbar={
+          <>
+            <select className="select select-xs select-ghost m-2 w-[200px]">
+              <option value="default">
+                Default
+              </option>
+            </select>
 
-      <div className="card shadow-xl m-2 overflow-auto">
-        {res && (
-          <table className="table table-zebra table-pin-rows table-compact">
+            <select
+              disabled={!databases}
+              className="select select-xs select-ghost m-2 w-[200px]"
+            >
+              {databases?.rows.map((row) => (
+                <option key={row[1]} value={row[1]}>
+                  {row[1]}
+                </option>
+              ))}
+            </select>
+
+            <select
+              disabled={!schemas}
+              className="select select-xs select-ghost m-2 w-[200px]"
+            >
+              {schemas?.rows.map((row) => (
+                <option key={row[1]} value={row[1]}>
+                  {row[1]}
+                </option>
+              ))}
+            </select>
+          </>
+        }
+      />
+
+      <div className="divider m-0" />
+
+      <div className="mx-4 overflow-auto">
+        <table className="table table-zebra table-pin-rows table-compact">
+          {res && (
             <thead>
               <tr>
                 {res.columns.map((column: any) => (
@@ -74,39 +126,49 @@ function App() {
                 ))}
               </tr>
             </thead>
-            <tbody>
-              {res.rows.length === 0
-                ? (
-                  <tr>
-                    <td colSpan={res.columns.length}>
-                      No results.
+          )}
+          <tbody>
+            {error
+              ? (
+                <tr>
+                  <td className="font-mono text-red-400">
+                    {error}
+                  </td>
+                </tr>
+              )
+              : !res
+              ? null
+              : res.rows.length === 0
+              ? (
+                <tr>
+                  <td colSpan={res.columns.length}>
+                    No results.
+                  </td>
+                </tr>
+              )
+              : res.rows.map((row: any, idx: number) => (
+                <tr key={idx}>
+                  {row.map((value: any, idx: number) => (
+                    <td key={idx}>
+                      {value === true
+                        ? "true"
+                        : value === false
+                        ? "false"
+                        : value === null
+                        ? <span className="text-gray-500">&lt;null&gt;</span>
+                        : Array.isArray(value)
+                        ? JSON.stringify(value)
+                        : value}
                     </td>
-                  </tr>
-                )
-                : res.rows.map((row: any, idx: number) => (
-                  <tr key={idx}>
-                    {row.map((value: any, idx: number) => (
-                      <td key={idx}>
-                        {value === true
-                          ? "true"
-                          : value === false
-                          ? "false"
-                          : value === null
-                          ? <span className="text-gray-500">&lt;null&gt;</span>
-                          : Array.isArray(value)
-                          ? JSON.stringify(value)
-                          : value}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        )}
+                  ))}
+                </tr>
+              ))}
+          </tbody>
+        </table>
       </div>
 
       {res && (
-        <div className="m-4 text-sm text-gray-300">
+        <div className="mx-4 my-2 px-4 py-2 text-sm text-gray-300">
           {res.rows.length} rows
         </div>
       )}

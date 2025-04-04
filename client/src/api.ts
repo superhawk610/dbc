@@ -8,7 +8,12 @@ const req = (method: string) => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(data),
     });
-    return response.json();
+
+    if (response.ok) {
+      return response.json();
+    } else {
+      throw new Error(await response.text());
+    }
   };
 };
 

@@ -98,17 +98,45 @@ pub struct QueryResultColumn {
 // like system tables, partitions, etc.
 // see: https://stackoverflow.com/a/58243669/885098
 pub async fn list_tables(client: &tokio_postgres::Client) -> eyre::Result<QueryResult> {
-    let sql = "SELECT * FROM information_schema.tables WHERE table_schema = $1 AND table_type = 'BASE TABLE' ORDER BY table_name";
+    let sql = "
+    SELECT *
+    FROM information_schema.tables
+    WHERE table_schema = $1
+    AND table_type = 'BASE TABLE'
+    ORDER BY table_name";
     query(client, sql, &[&"public"]).await
+}
+
+pub async fn list_schemas(client: &tokio_postgres::Client) -> eyre::Result<QueryResult> {
+    let sql = "
+    SELECT *
+    FROM information_schema.schemata
+    ORDER BY schema_name";
+    query(client, sql, &[]).await
+}
+
+pub async fn list_databases(client: &tokio_postgres::Client) -> eyre::Result<QueryResult> {
+    let sql = "
+    SELECT *
+    FROM pg_database
+    ORDER BY datname";
+    query(client, sql, &[]).await
 }
 
 pub async fn query(
     client: &tokio_postgres::Client,
-    query: &str,
+    raw_query: &str,
     params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
 ) -> eyre::Result<QueryResult> {
+    let query = match raw_query.split_once(';') {
+        None => raw_query,
+        Some((q, _)) => {
+            tracing::warn!("query contained more than one statement");
+            q
+        }
+    };
+
     let stmt = client.prepare(query).await?;
-    let rows = client.query(&stmt, params).await?;
 
     let columns = stmt
         .columns()
@@ -119,21 +147,79 @@ pub async fn query(
         })
         .collect::<Vec<_>>();
 
-    let mut data_rows: Vec<Vec<serde_json::Value>> = Vec::with_capacity(rows.len());
-    for row in rows {
-        let mut data_row: Vec<serde_json::Value> = Vec::with_capacity(columns.len());
-        for col in stmt.columns() {
-            if let Some(val) = to_json(&row, col) {
-                data_row.push(val);
+    if stmt.columns().iter().all(col_supported) {
+        let rows = client.query(&stmt, params).await?;
+
+        let mut data_rows: Vec<Vec<serde_json::Value>> = Vec::with_capacity(rows.len());
+        for row in rows {
+            let mut data_row: Vec<serde_json::Value> = Vec::with_capacity(columns.len());
+            for col in stmt.columns() {
+                if let Some(val) = to_json(&row, col) {
+                    data_row.push(val);
+                }
+            }
+            data_rows.push(data_row);
+        }
+
+        Ok(QueryResult {
+            columns,
+            rows: data_rows,
+        })
+    } else {
+        // fall back on simple query (uses TEXT instead of BINARY encoding)
+        tracing::info!("falling back on TEXT encoding");
+
+        let rows = client.simple_query(query).await?;
+
+        let mut data_rows: Vec<Vec<serde_json::Value>> = Vec::with_capacity(rows.len());
+        for cmd in rows {
+            use tokio_postgres::SimpleQueryMessage::*;
+            match cmd {
+                RowDescription(_) => {}
+                CommandComplete(_) => {}
+                Row(row) => {
+                    let mut data_row: Vec<serde_json::Value> = Vec::with_capacity(columns.len());
+                    for col in stmt.columns() {
+                        data_row.push(row.get(col.name()).into());
+                    }
+                    data_rows.push(data_row);
+                }
+                _ => unreachable!("non-exhaustive enum"),
             }
         }
-        data_rows.push(data_row);
-    }
 
-    Ok(QueryResult {
-        columns,
-        rows: data_rows,
-    })
+        Ok(QueryResult {
+            columns,
+            rows: data_rows,
+        })
+    }
+}
+
+fn col_supported(col: &tokio_postgres::Column) -> bool {
+    use tokio_postgres::types::Type;
+    match *col.type_() {
+        Type::TEXT
+        | Type::VARCHAR
+        | Type::NAME
+        | Type::CHAR
+        | Type::BOOL
+        | Type::INT8
+        | Type::INT4
+        | Type::INT2
+        | Type::FLOAT8
+        | Type::NUMERIC
+        | Type::FLOAT4
+        | Type::JSONB
+        | Type::JSON
+        | Type::DATE
+        | Type::TIME
+        | Type::TIMESTAMP
+        | Type::TIMESTAMPTZ => true,
+        _ => match col.type_().name() {
+            "citext" => true,
+            _ => false,
+        },
+    }
 }
 
 fn to_json(row: &tokio_postgres::Row, col: &tokio_postgres::Column) -> Option<serde_json::Value> {
@@ -191,16 +277,18 @@ fn to_json(row: &tokio_postgres::Row, col: &tokio_postgres::Column) -> Option<se
             let val: Option<time::OffsetDateTime> = row.get(col.name());
             Some(val.map(|t| t.format(&Iso8601::DEFAULT).unwrap()).into())
         }
-        _ => match col.type_().name() {
-            // citext is a case-insensitive text type
-            "citext" => {
-                let val: Option<&str> = row.get(col.name());
-                Some(val.into())
+        _ => {
+            match col.type_().name() {
+                // citext is a case-insensitive text type
+                "citext" => {
+                    let val: Option<&str> = row.get(col.name());
+                    Some(val.into())
+                }
+                _ => {
+                    tracing::warn!("unsupported type: {:?}", col.type_());
+                    None
+                }
             }
-            _ => {
-                tracing::warn!("unsupported type: {:?}", col.type_());
-                None
-            }
-        },
+        }
     }
 }
