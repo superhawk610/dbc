@@ -11,22 +11,49 @@ use std::sync::Arc;
 async fn main() -> eyre::Result<()> {
     dotenv::dotenv().ok();
 
+    if let Err(err) =
+        dbc::persistence::load_encryption_key(std::env::var("ENCRYPTION_KEY").ok().as_deref())
+    {
+        println!("{}", err);
+        std::process::exit(1);
+    };
+
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::DEBUG)
         .with_test_writer()
         .init();
 
+    let mut store = dbg!(dbc::persistence::Store::load().unwrap());
+    if store.connections.is_empty() {
+        let db_host = std::env::var("DB_HOST").expect("DB_HOST is set");
+        let db_port = std::env::var("DB_PORT")
+            .expect("DB_PORT is set")
+            .parse()
+            .expect("DB_PORT is valid");
+        let db_user = std::env::var("DB_USER").expect("DB_USER is set");
+        let db_pass = std::env::var("DB_PASS").expect("DB_PASS is set");
+        let db_database = std::env::var("DB_DATABASE").expect("DB_DATABASE is set");
+
+        let connection = dbc::persistence::Connection {
+            name: "default".to_owned(),
+            host: db_host,
+            port: db_port,
+            username: db_user,
+            password: dbc::persistence::EncryptedString::new(db_pass),
+            database: db_database,
+        };
+
+        store.connections.push(connection);
+        store.persist().unwrap();
+    }
+
+    let connection = &store.connections[0];
     let cfg = dbc::db::Config::builder()
-        .host(std::env::var("DB_HOST").expect("DB_HOST is set"))
-        .port(
-            std::env::var("DB_PORT")
-                .expect("DB_PORT is set")
-                .parse()
-                .expect("DB_PORT is valid"),
-        )
-        .username(std::env::var("DB_USER").expect("DB_USER is set"))
-        .password(std::env::var("DB_PASS").expect("DB_PASS is set"))
-        .database(std::env::var("DB_DATABASE").expect("DB_DATABASE is set"))
+        .host(connection.host.clone())
+        .port(connection.port)
+        .username(connection.username.clone())
+        .password(connection.password.clone())
+        .database(connection.database.clone())
         .build();
 
     let pool = dbc::pool::ConnectionPool::new(cfg).await;
