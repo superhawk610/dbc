@@ -57,7 +57,7 @@ function App() {
               {!tables
                 ? (
                   <li>
-                    <span className="text-gray-300">loading...</span>
+                    <span className="loading loading-infinity loading-xl" />
                   </li>
                 )
                 : tables.rows.map((row) => (
@@ -80,7 +80,7 @@ function App() {
           <>
             <select className="select select-xs select-ghost m-2 w-[200px]">
               <option value="default">
-                Default
+                default
               </option>
             </select>
 

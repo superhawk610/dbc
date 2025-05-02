@@ -18,10 +18,11 @@
     "@types/react": "npm:@types/react@^19.0.10",
     "@types/react-dom": "npm:@types/react-dom@^19.0.4",
     "@vitejs/plugin-react": "npm:@vitejs/plugin-react@^4.3.4",
-    "daisyui": "npm:daisyui@^5.0.12",
+    "daisyui": "npm:daisyui@^5.0.35",
     "monaco-editor": "npm:monaco-editor@^0.52.2",
     "react": "npm:react@^19.0.0",
     "react-dom": "npm:react-dom@^19.0.0",
+    "react-html-props": "npm:react-html-props@2.0.10",
     "tailwindcss": "npm:tailwindcss@^4.1.2",
     "vite": "npm:vite@^6.1.1"
   }

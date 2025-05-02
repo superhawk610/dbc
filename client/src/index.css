@@ -1,4 +1,9 @@
 @import "tailwindcss";
 @plugin "daisyui" {
   themes: all;
+  /*
+   * the app fills the window, so we never have a full-height scrollbar;
+   * disabling this fixes the brief rightward shift when closing a modal
+   */
+  exclude: rootscrollgutter;
 }

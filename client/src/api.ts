@@ -1,5 +1,7 @@
 const baseUrl = `http://${import.meta.env.VITE_API_BASE}`;
 
+const NO_CONTENT = 204;
+
 const req = (method: string) => {
   return async (path: string, data?: Record<string, unknown>) => {
     const response = await fetch(`${baseUrl}${path}`, {
@@ -9,11 +11,15 @@ const req = (method: string) => {
       body: JSON.stringify(data),
     });
 
-    if (response.ok) {
-      return response.json();
-    } else {
+    if (!response.ok) {
       throw new Error(await response.text());
     }
+
+    if (response.status === NO_CONTENT) {
+      return null;
+    }
+
+    return response.json();
   };
 };
 

@@ -1,4 +1,5 @@
 import ThemeSelect from "./ThemeSelect.tsx";
+import SettingsModal from "./SettingsModal.tsx";
 
 export default function Navbar() {
   return (
@@ -11,7 +12,8 @@ export default function Navbar() {
           </span>
         </a>
       </div>
-      <div className="flex-none">
+      <div className="flex-none gap-2">
+        <SettingsModal />
         <ThemeSelect />
       </div>
     </div>

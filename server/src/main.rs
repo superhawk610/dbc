@@ -5,7 +5,7 @@ use poem::{
     web::{Data, Json},
 };
 use serde::Deserialize;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
@@ -58,7 +58,10 @@ async fn main() -> eyre::Result<()> {
 
     let pool = dbc::pool::ConnectionPool::new(cfg).await;
 
-    let state = Arc::new(dbc::State { pool });
+    let state = Arc::new(dbc::State {
+        pool,
+        config: RwLock::new(store),
+    });
 
     async fn format_eyre<E: poem::Endpoint>(
         next: E,
@@ -83,6 +86,7 @@ async fn main() -> eyre::Result<()> {
                 .at("/schemas", get(get_schemas))
                 .at("/tables", get(get_tables)),
         )
+        .at("/config", get(get_config).put(update_config))
         .at("/query", post(handle_query))
         .with(poem::middleware::Cors::new())
         .with(poem::middleware::Tracing)
@@ -97,6 +101,28 @@ async fn main() -> eyre::Result<()> {
     .await?;
 
     Ok(())
+}
+
+#[poem::handler]
+async fn get_config(Data(state): Data<&Arc<dbc::State>>) -> Json<serde_json::Value> {
+    let config = state.config.read().unwrap();
+    Json(serde_json::json!({
+        "connections": config.connections.iter().map(dbc::persistence::DecryptedConnection::from).collect::<Vec<_>>(),
+    }))
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct UpdateConfig {
+    pub connections: Vec<dbc::persistence::DecryptedConnection>,
+}
+
+#[poem::handler]
+async fn update_config(
+    Json(config): Json<UpdateConfig>,
+    Data(state): Data<&Arc<dbc::State>>,
+) -> poem::http::StatusCode {
+    dbg!(config);
+    poem::http::StatusCode::NO_CONTENT
 }
 
 #[poem::handler]

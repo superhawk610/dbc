@@ -50,6 +50,29 @@ pub struct Connection {
     pub database: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DecryptedConnection {
+    pub name: String,
+    pub host: String,
+    pub port: usize,
+    pub username: String,
+    pub password: String,
+    pub database: String,
+}
+
+impl From<&Connection> for DecryptedConnection {
+    fn from(conn: &Connection) -> Self {
+        Self {
+            name: conn.name.clone(),
+            host: conn.host.clone(),
+            port: conn.port,
+            username: conn.username.clone(),
+            password: conn.password.0.clone(),
+            database: conn.database.clone(),
+        }
+    }
+}
+
 impl Store {
     pub fn load() -> eyre::Result<Self> {
         match std::fs::read_to_string(STORE_FILE) {
