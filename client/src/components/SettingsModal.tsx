@@ -1,11 +1,16 @@
 import React, { useEffect, useState } from "react";
+import Connection from "../models/connection.ts";
 import Modal, { closeModal } from "./Modal.tsx";
 import Fieldset from "./form/Fieldset.tsx";
 import Field from "./form/Field.tsx";
 import { get, put } from "../api.ts";
 
+interface Config {
+  connections: Connection[];
+}
+
 export default function SettingsModal() {
-  const [config, setConfig] = useState(null);
+  const [config, setConfig] = useState<Config | null>(null);
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
@@ -18,7 +23,7 @@ export default function SettingsModal() {
   async function handleSubmit(ev: React.FormEvent) {
     ev.preventDefault();
 
-    const formData = new FormData(ev.target);
+    const formData = new FormData(ev.target as HTMLFormElement);
     const conn = Object.fromEntries(formData) as Record<
       string,
       string | number

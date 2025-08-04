@@ -90,10 +90,12 @@ function App() {
                           // editorRef.current!.focus();
 
                           // open new editor tab
-                          editorRef.current!.openTab(
-                            `Table / ${row[2]}`,
-                            res.ddl,
-                          );
+                          editorRef.current!.openTab({
+                            id: `dbc://table/${row[2]}`,
+                            name: `Table / ${row[2]}`,
+                            language: "sql",
+                            contents: res.ddl,
+                          });
                         }}
                       >
                         {row[2]}

@@ -2,7 +2,7 @@ export interface Props {
   name: string;
   type?: string;
   label?: string;
-  defaultValue?: string;
+  defaultValue?: string | number;
 }
 
 function capitalize(str: string) {

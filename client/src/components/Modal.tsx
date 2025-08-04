@@ -3,7 +3,7 @@ import { ButtonProps, DivProps } from "react-html-props";
 
 export function closeModal(ev: React.MouseEvent) {
   ev.preventDefault();
-  ev.target.closest("dialog").close();
+  (ev.target as HTMLElement)!.closest("dialog")!.close();
 }
 
 function ModalBody({ children, ...props }: DivProps) {
@@ -38,14 +38,13 @@ export interface Props {
   children?: React.ReactNode;
 }
 
-function Modal(
-  { buttonText, heading, children }: Props,
-) {
-  const dialogRef = useRef<HTMLDialogElement>();
+function Modal({ buttonText, heading, children }: Props) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
 
   return (
     <>
       <button
+        type="button"
         className="btn"
         onClick={() => dialogRef.current!.showModal()}
       >

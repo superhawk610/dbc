@@ -5,10 +5,9 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { loader, Monaco } from "@monaco-editor/react";
-import { editor as editorNS } from "monaco-editor";
+import { Editor as MonacoEditor, loader, Monaco } from "@monaco-editor/react";
+import { editor as editorNS, Uri } from "monaco-editor";
 import { HiX as XIcon } from "react-icons/hi";
-import EditorTab from "./EditorTab.tsx";
 
 export const LAST_QUERY = "lastQuery";
 
@@ -17,6 +16,22 @@ const THEME_LIST_JSON = "https://unpkg.com/monaco-themes/themes/themelist.json";
 const DEFAULT_THEMES = {
   "vs-dark": "Default (Dark)",
   "vs-light": "Default (Light)",
+};
+
+const DEFAULT_TAB: EditorTab = {
+  id: "dbc://_blank",
+  name: "Script",
+  language: "sql",
+  contents: globalThis.localStorage.getItem(LAST_QUERY) ||
+    "-- enter query here\n",
+};
+
+const EDITOR_OPTIONS: editorNS.IStandaloneEditorConstructionOptions = {
+  automaticLayout: true,
+  fontSize: 15,
+  minimap: {
+    enabled: false,
+  },
 };
 
 interface MonacoRef {
@@ -42,21 +57,25 @@ export interface Props {
   toolbar?: React.ReactNode;
 }
 
+export interface EditorTab {
+  id: string;
+  name: string;
+  language: string;
+  contents: string;
+}
+
 export interface EditorRef {
   getContents: () => string;
   focus: () => void;
   insert: (text: string) => void;
-  openTab: (name: string, contents: string) => void;
+  openTab: (tab: EditorTab) => void;
 }
 
 export default forwardRef(
   function Editor({ onClick, onClickLabel, sidebar, toolbar }: Props, ref) {
-    const [tabs, setTabs] = useState([{
-      name: "Script",
-      contents: globalThis.localStorage.getItem(LAST_QUERY) ||
-        "-- enter query here\n",
-    }]);
+    const [tabs, setTabs] = useState<EditorTab[]>([DEFAULT_TAB]);
     const [activeTabIndex, setActiveTabIndex] = useState(0);
+    const activeTab = tabs[activeTabIndex];
 
     const [showEditor, setShowEditor] = useState(false);
     const monacoRef = useRef({ definedThemes: {} } as MonacoRef);
@@ -67,28 +86,14 @@ export default forwardRef(
       globalThis.localStorage.getItem("monaco-theme") ?? "vs-dark",
     );
 
-    function chooseTab(tabs: any[], tabIndex: number) {
-      // save current tab's contents
-      setTabs(
-        tabs.with(activeTabIndex, {
-          ...tabs[activeTabIndex],
-          contents: monacoRef.current.editor.getValue(),
-        }),
-      );
-
-      // update editor with new tab's contents
-      monacoRef.current.editor.setValue(tabs[tabIndex].contents);
-
-      setActiveTabIndex(tabIndex);
-    }
-
     useImperativeHandle(ref, () => ({
       getContents: () => monacoRef.current.editor.getValue(),
       focus: () => monacoRef.current.editor.focus(),
       insert: (text: string) =>
         monacoRef.current.editor.trigger("keyboard", "type", { text }),
-      openTab: (name: string, contents: string) => {
-        chooseTab([...tabs, { name, contents }], tabs.length);
+      openTab: (tab: EditorTab) => {
+        setTabs([...tabs, tab]);
+        setActiveTabIndex(tabs.length);
       },
     }), [tabs]);
 
@@ -108,6 +113,39 @@ export default forwardRef(
       })();
     }, []);
 
+    function closeTab(id: string, idx: number) {
+      // remove the closed tab
+      setTabs(tabs.toSpliced(idx, 1));
+
+      // close monaco's underlying model
+      monacoRef.current!.monaco.editor.getModel(Uri.parse(id))!.dispose();
+
+      if (idx < activeTabIndex) {
+        // if we closed a tab to the left, decrement the active index
+        setActiveTabIndex(activeTabIndex - 1);
+      } else if (idx === activeTabIndex) {
+        // if we closed the active tab, choose the new active tab
+        // and set the editor's contents accordingly
+        const newIndex = idx === 0 ? 1 : idx - 1;
+        setActiveTabIndex(newIndex);
+      }
+    }
+
+    function formatTabName(tabName: string) {
+      const parts = tabName.split(" / ");
+
+      let prefix = null;
+      let name = null;
+      if (parts.length > 1) {
+        prefix = `${parts.slice(0, -1).join(" / ")} /`;
+        name = parts[parts.length - 1];
+      } else {
+        name = parts.join();
+      }
+
+      return { prefix, name };
+    }
+
     return (
       <>
         <div className="flex-1 flex flex-row">
@@ -117,18 +155,7 @@ export default forwardRef(
             <div className="flex flex-col h-full">
               <div className="flex bg-base-300">
                 {tabs.length > 1 && tabs.map((tab, idx) => {
-                  const tabName = tab.name || `Tab ${idx + 1}`;
-                  const parts = tabName.split(" / ");
-
-                  let prefix = null;
-                  let name = null;
-                  if (parts.length > 1) {
-                    prefix = `${parts.slice(0, -1).join(" / ")} /`;
-                    name = parts[parts.length - 1];
-                  } else {
-                    name = parts.join();
-                  }
-
+                  const { prefix, name } = formatTabName(tab.name);
                   return (
                     <div
                       role="button"
@@ -141,7 +168,7 @@ export default forwardRef(
                           ? "bg-primary text-primary-content hover:bg-primary/90"
                           : "bg-base-100 hover:bg-base-100/70"
                       }`}
-                      onClick={() => chooseTab(tabs, idx)}
+                      onClick={() => setActiveTabIndex(idx)}
                     >
                       <span>
                         {prefix && (
@@ -161,21 +188,7 @@ export default forwardRef(
                           // (and we don't want to switch to the tab we're closing)
                           ev.stopPropagation();
 
-                          // remove the closed tab
-                          setTabs(tabs.toSpliced(idx, 1));
-
-                          if (idx < activeTabIndex) {
-                            // if we closed a tab to the left, decrement the active index
-                            setActiveTabIndex(activeTabIndex - 1);
-                          } else if (idx === activeTabIndex) {
-                            // if we closed the active tab, choose the new active tab
-                            // and set the editor's contents accordingly
-                            const newIndex = idx === 0 ? 1 : idx - 1;
-                            monacoRef.current.editor.setValue(
-                              tabs[newIndex].contents,
-                            );
-                            setActiveTabIndex(newIndex);
-                          }
+                          closeTab(tab.id, idx);
                         }}
                       >
                         <XIcon />
@@ -186,12 +199,32 @@ export default forwardRef(
               </div>
 
               {!showEditor ? <div className="h-[30vh]" /> : (
-                <EditorTab
+                <MonacoEditor
                   theme={activeTheme}
-                  monacoRef={monacoRef.current}
-                  defaultValue={tabs[activeTabIndex].contents}
-                  onClickLabel={onClickLabel}
-                  onClick={onClick}
+                  path={activeTab.id}
+                  defaultLanguage={activeTab.language}
+                  defaultValue={activeTab.contents}
+                  options={EDITOR_OPTIONS}
+                  onMount={(editor: editorNS.IStandaloneCodeEditor) => {
+                    monacoRef.current!.editor = editor;
+                    editor.setPosition({ lineNumber: 2, column: 0 });
+                    editor.focus();
+
+                    if (onClickLabel) {
+                      editor.addAction({
+                        id: "editor-action",
+                        label: onClickLabel,
+                        keybindings: [
+                          monacoRef.current!.monaco.KeyMod.CtrlCmd |
+                          monacoRef.current!.monaco.KeyCode.Enter,
+                        ],
+                        contextMenuGroupId: "2_commands",
+                        run: () => {
+                          onClick?.();
+                        },
+                      });
+                    }
+                  }}
                 />
               )}
             </div>
