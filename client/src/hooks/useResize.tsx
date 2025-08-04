@@ -1,32 +1,29 @@
 import { RefObject, useEffect, useLayoutEffect } from "react";
 
 export interface UseResizeHook {
+  active?: boolean;
   minHeight: number;
-  defaultHeight: number | null;
+  defaultHeight: number;
   resizeRef: RefObject<HTMLElement | null>;
   resizeHandleRef: RefObject<HTMLElement | null>;
 }
 
 export default function useResize(
-  { minHeight, defaultHeight, resizeRef, resizeHandleRef }: UseResizeHook,
+  { active, minHeight, defaultHeight, resizeRef, resizeHandleRef }:
+    UseResizeHook,
 ) {
   useLayoutEffect(() => {
-    resizeRef.current!.style.height = defaultHeight ? `${defaultHeight}px` : "";
-  }, [defaultHeight]);
+    resizeRef.current!.style.height = active ? `${defaultHeight}px` : "";
+  }, [active]);
 
   useEffect(() => {
     if (!resizeHandleRef.current) return;
 
-    let height = minHeight;
+    let height = defaultHeight;
     let y = -1;
 
     function handleResize(ev: MouseEvent) {
-      if (y === -1) {
-        y = ev.pageY;
-        return;
-      }
-
-      const diff = y - ev.pageY;
+      const diff = y - ev.clientY;
       height -= diff;
       if (height < minHeight) height = minHeight;
       resizeRef.current!.style.height = `${height}px`;
@@ -36,10 +33,10 @@ export default function useResize(
 
     function handleMouseDown(ev: MouseEvent) {
       ev.preventDefault();
+      y = ev.clientY;
 
       document.addEventListener("mousemove", handleResize);
       document.addEventListener("mouseup", () => {
-        y = -1;
         document.removeEventListener("mousemove", handleResize);
       });
     }
@@ -52,5 +49,5 @@ export default function useResize(
         handleMouseDown,
       );
     };
-  }, [resizeHandleRef.current]);
+  }, [active]);
 }

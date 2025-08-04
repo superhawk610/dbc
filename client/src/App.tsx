@@ -7,7 +7,7 @@ import Navbar from "./components/Navbar.tsx";
 import Editor, { EditorRef, LAST_QUERY } from "./components/Editor.tsx";
 import QueryRow, { QueryResult, QueryValue } from "./models/query.ts";
 
-const EDITOR_HEIGHT = 400;
+const EDITOR_HEIGHT = { min: 200, default: 400 };
 
 function App() {
   const editorRef = useRef<EditorRef>(null);
@@ -37,10 +37,11 @@ function App() {
   }, []);
 
   useResize({
+    active: showResults,
     resizeRef,
     resizeHandleRef,
-    minHeight: EDITOR_HEIGHT,
-    defaultHeight: showResults ? EDITOR_HEIGHT : null,
+    minHeight: EDITOR_HEIGHT.min,
+    defaultHeight: EDITOR_HEIGHT.default,
   });
 
   async function dispatchQuery() {
@@ -81,7 +82,7 @@ function App() {
         </button>
       </Navbar>
 
-      <div ref={resizeRef} className="flex flex-col h-full">
+      <div ref={resizeRef} className="flex-shrink-0 flex flex-col h-full">
         <Editor
           ref={editorRef}
           onClick={dispatchQuery}
@@ -170,15 +171,15 @@ function App() {
       </div>
 
       {showResults && (
-        <div className="flex-1 bg-base-300">
+        <div className="flex-1 flex flex-col bg-base-300 overflow-y-auto">
           <div
             ref={resizeHandleRef}
-            className="bg-base-content/10 pt-1 cursor-ns-resize z-[10]"
+            className="bg-base-content/10 h-1 cursor-ns-resize z-[10]"
           />
 
-          <div className="overflow-auto">
-            {!res && <p className="mt-4 px-6 text-sm">No results.</p>}
+          {!res && <p className="mt-4 px-6 text-sm">No results.</p>}
 
+          <div className="flex-1 overflow-auto">
             <table className="table table-zebra table-pin-rows table-compact">
               {res && (
                 <thead>
