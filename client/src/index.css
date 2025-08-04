@@ -15,3 +15,7 @@
    */
   position: absolute !important;
 }
+
+.sql-active-statement-margin {
+  @apply bg-primary/20;
+}

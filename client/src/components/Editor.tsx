@@ -6,7 +6,7 @@ import React, {
   useState,
 } from "react";
 import { Editor as MonacoEditor, loader, Monaco } from "@monaco-editor/react";
-import { editor as editorNS, Uri } from "monaco-editor";
+import { editor as editorNS, Range, Uri } from "monaco-editor";
 import { HiX as XIcon } from "react-icons/hi";
 
 export const LAST_QUERY = "lastQuery";
@@ -38,6 +38,7 @@ interface MonacoRef {
   editor: editorNS.IStandaloneCodeEditor;
   monaco: Monaco;
   definedThemes: Record<string, boolean>;
+  decoration: string | null;
 }
 
 async function fetchTheme(theme: string, filename: string, ref: MonacoRef) {
@@ -207,9 +208,12 @@ export default forwardRef(
                   options={EDITOR_OPTIONS}
                   onMount={(editor: editorNS.IStandaloneCodeEditor) => {
                     monacoRef.current!.editor = editor;
-                    editor.setPosition({ lineNumber: 2, column: 0 });
-                    editor.focus();
 
+                    // grab editor focus at 2nd line by default
+                    // editor.setPosition({ lineNumber: 2, column: 0 });
+                    // editor.focus();
+
+                    // add click action to editor's context menu
                     if (onClickLabel) {
                       editor.addAction({
                         id: "editor-action",
@@ -224,6 +228,30 @@ export default forwardRef(
                         },
                       });
                     }
+
+                    // attach cursor position listener
+                    editor.onDidChangeCursorPosition((ev) => {
+                      console.log(ev.position);
+
+                      // TODO: figure out which statement we're currently editing
+                      // and highlight those lines; probably want to cache that
+                      // somewhere, since that's the line(s) we'll dispatch too
+
+                      // const model = editor.getModel()!;
+                      // const [decoration] = model.deltaDecorations(
+                      //   monacoRef.current.decoration
+                      //     ? [monacoRef.current.decoration]
+                      //     : [],
+                      //   [{
+                      //     range: new Range(1, 1, 3, 1),
+                      //     options: {
+                      //       isWholeLine: true,
+                      //       marginClassName: "sql-active-statement-margin",
+                      //     },
+                      //   }],
+                      // );
+                      // monacoRef.current.decoration = decoration;
+                    });
                   }}
                 />
               )}
