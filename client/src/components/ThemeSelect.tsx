@@ -27,7 +27,7 @@ export default function ThemeSelect() {
           <input
             type="radio"
             name="theme-dropdown"
-            className="theme-controller btn btn-sm btn-block btn-ghost justify-start"
+            className="theme-controller btn btn-sm btn-block btn-ghost justify-start checked:bg-base-100"
             aria-label="Default (system)"
             defaultValue=""
             defaultChecked={!ACTIVE_THEME}
@@ -43,7 +43,7 @@ export default function ThemeSelect() {
               <input
                 type="radio"
                 name="theme-dropdown"
-                className="theme-controller btn btn-sm btn-block btn-ghost justify-start"
+                className="theme-controller btn btn-sm btn-block btn-ghost justify-start checked:bg-base-100"
                 aria-label={theme === "cmyk"
                   ? "CMYK"
                   : theme.charAt(0).toUpperCase() + theme.slice(1)}
@@ -54,7 +54,9 @@ export default function ThemeSelect() {
                 }}
               />
             </li>
-            {theme === "dark" && <li className="divider my-0" />}
+            {theme === "dark" && (
+              <li className="border-b border-base-content/10 my-0" />
+            )}
           </React.Fragment>
         ))}
       </ul>

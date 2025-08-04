@@ -7,3 +7,11 @@
    */
   exclude: rootscrollgutter;
 }
+
+.monaco-editor {
+  /*
+   * required to allow grow/shrink to work properly with `automaticLayout`
+   * see: https://stackoverflow.com/a/71876526/885098
+   */
+  position: absolute !important;
+}

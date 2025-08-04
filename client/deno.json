@@ -5,8 +5,9 @@
     "preview": "deno run -A --node-modules-dir npm:vite preview",
     "serve": "deno run --allow-net --allow-read jsr:@std/http@1/file-server dist/"
   },
+  "nodeModulesDir": "auto",
   "compilerOptions": {
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "lib": ["es2023", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
     "jsxImportSource": "react",
     "jsxImportSourceTypes": "@types/react"
@@ -23,6 +24,7 @@
     "react": "npm:react@^19.0.0",
     "react-dom": "npm:react-dom@^19.0.0",
     "react-html-props": "npm:react-html-props@2.0.10",
+    "react-icons": "npm:react-icons@^5.5.0",
     "tailwindcss": "npm:tailwindcss@^4.1.2",
     "vite": "npm:vite@^6.1.1"
   }

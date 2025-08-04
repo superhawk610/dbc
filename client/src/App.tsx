@@ -1,19 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import { get, post } from "./api.ts";
 
+import useResize from "./hooks/useResize.tsx";
 import Navbar from "./components/Navbar.tsx";
-import Editor from "./components/Editor.tsx";
+import Editor, { EditorRef, LAST_QUERY } from "./components/Editor.tsx";
 
 function App() {
-  const editorRef = useRef<any | null>(null);
+  const editorRef = useRef<EditorRef>(null);
+  const resizeRef = useRef<HTMLDivElement>(null);
+  const resizeHandleRef = useRef<HTMLDivElement>(null);
   const [res, setRes] = useState<any | null>(null);
   const [tables, setTables] = useState<any | null>(null);
-  const [databases, setDatabases] = useState(null);
-  const [schemas, setSchemas] = useState(null);
+  const [databases, setDatabases] = useState<any | null>(null);
+  const [schemas, setSchemas] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // TODO: more ergonomic API for reading rows from server
-  // TODO: fetch available schemas and databases
   // TODO: switch between multiple connections
   useEffect(() => {
     (async () => {
@@ -25,16 +27,33 @@ function App() {
       setSchemas(schemas);
       setTables(tables);
 
+      // set the result view to list available databases on initial load
       setRes(databases);
     })();
   }, []);
 
+  useResize({
+    resizeRef,
+    resizeHandleRef,
+    minHeight: 300,
+  });
+
   async function dispatchQuery() {
     const query = editorRef.current!.getContents();
+
+    // store the query in local storage to be restored on page reload
+    globalThis.localStorage.setItem(LAST_QUERY, query);
+
     try {
       const res = await post("/query", { query });
       setError(null);
       setRes(res);
+
+      // if the statement contained DDL, refresh the table view
+      if (res.is_ddl) {
+        const tables = await get("/db/tables");
+        setTables(tables);
+      }
     } catch (err) {
       console.log("caught");
       setError((err as any).message);
@@ -42,74 +61,91 @@ function App() {
     }
   }
 
-  console.log({ res });
-
   return (
     <div className="flex flex-col items-stretch w-screen h-screen">
       <Navbar />
-      <Editor
-        ref={editorRef}
-        onClick={dispatchQuery}
-        onClickLabel="Query ⌘⏎"
-        sidebar={
-          <div className="w-[300px] border-r-2 border-gray-700 overflow-auto">
-            <ul className="menu w-full">
-              {!tables
-                ? (
-                  <li>
-                    <span className="loading loading-infinity loading-xl" />
-                  </li>
-                )
-                : tables.rows.map((row) => (
-                  <li key={row[2]}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        editorRef.current.insert(row[2]);
-                        editorRef.current.focus();
-                      }}
-                    >
-                      {row[2]}
-                    </button>
-                  </li>
+      <div ref={resizeRef} className="flex flex-col">
+        <Editor
+          ref={editorRef}
+          onClick={dispatchQuery}
+          onClickLabel="Query ⌘⏎"
+          sidebar={
+            <div className="w-[300px] overflow-auto">
+              <ul className="menu w-full">
+                {!tables
+                  ? (
+                    <li>
+                      <span className="loading loading-infinity loading-xl" />
+                    </li>
+                  )
+                  : tables.rows.map((row: string[]) => (
+                    <li key={row[2]}>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const res = await get(`/db/ddl/table/${row[2]}`);
+
+                          // insert text into editor
+                          // editorRef.current!.insert(row[2]);
+                          // editorRef.current!.focus();
+
+                          // open new editor tab
+                          editorRef.current!.openTab(
+                            `Table / ${row[2]}`,
+                            res.ddl,
+                          );
+                        }}
+                      >
+                        {row[2]}
+                      </button>
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          }
+          toolbar={
+            <>
+              <select
+                title="Connection"
+                className="select select-xs select-ghost m-2 w-[200px]"
+              >
+                <option value="default">
+                  default
+                </option>
+              </select>
+
+              <select
+                title="Database"
+                disabled={!databases}
+                className="select select-xs select-ghost m-2 w-[200px]"
+              >
+                {databases?.rows.map((row: string[]) => (
+                  <option key={row[1]} value={row[1]}>
+                    {row[1]}
+                  </option>
                 ))}
-            </ul>
-          </div>
-        }
-        toolbar={
-          <>
-            <select className="select select-xs select-ghost m-2 w-[200px]">
-              <option value="default">
-                default
-              </option>
-            </select>
+              </select>
 
-            <select
-              disabled={!databases}
-              className="select select-xs select-ghost m-2 w-[200px]"
-            >
-              {databases?.rows.map((row) => (
-                <option key={row[1]} value={row[1]}>
-                  {row[1]}
-                </option>
-              ))}
-            </select>
+              <select
+                title="Schema"
+                disabled={!schemas}
+                className="select select-xs select-ghost m-2 w-[200px]"
+              >
+                {schemas?.rows.map((row: string[]) => (
+                  <option key={row[1]} value={row[1]}>
+                    {row[1]}
+                  </option>
+                ))}
+              </select>
+            </>
+          }
+        />
+      </div>
 
-            <select
-              disabled={!schemas}
-              className="select select-xs select-ghost m-2 w-[200px]"
-            >
-              {schemas?.rows.map((row) => (
-                <option key={row[1]} value={row[1]}>
-                  {row[1]}
-                </option>
-              ))}
-            </select>
-          </>
-        }
+      <div
+        ref={resizeHandleRef}
+        className="bg-base-content/10 pt-1 my-1 cursor-ns-resize z-[10]"
       />
-
-      <div className="divider m-0" />
 
       <div className="mx-4 overflow-auto">
         <table className="table table-zebra table-pin-rows table-compact">

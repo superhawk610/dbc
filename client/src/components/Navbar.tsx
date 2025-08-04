@@ -1,3 +1,4 @@
+import { HiOutlineDatabase as DatabaseIcon } from "react-icons/hi";
 import ThemeSelect from "./ThemeSelect.tsx";
 import SettingsModal from "./SettingsModal.tsx";
 
@@ -6,7 +7,7 @@ export default function Navbar() {
     <div className="navbar">
       <div className="flex-1">
         <a href="/" className="btn btn-ghost text-xl">
-          dbc
+          <DatabaseIcon /> dbc
           <span className="pl-2 pt-1 text-xs text-gray-500">
             database client
           </span>

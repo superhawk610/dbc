@@ -1,6 +1,7 @@
 use native_tls::TlsConnector;
 use postgres_native_tls::MakeTlsConnector;
 use serde::Serialize;
+use std::collections::HashMap;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::oneshot::{Receiver, Sender, channel};
 use tokio_postgres::Socket;
@@ -85,6 +86,25 @@ pub async fn connect(config: &Config) -> eyre::Result<Connection> {
 pub struct QueryResult {
     pub columns: Vec<QueryResultColumn>,
     pub rows: Vec<Vec<serde_json::Value>>,
+    /// Whether or not the query contained DDL (Data Definition Language).
+    /// When `false`, the statement only contained DML (Data Manipulation Language).
+    /// When `true`, the client should refresh any cached schemas, as they may have changed.
+    pub is_ddl: bool,
+}
+
+impl QueryResult {
+    fn row_maps(&self) -> Vec<HashMap<String, serde_json::Value>> {
+        self.rows
+            .iter()
+            .map(|row| {
+                self.columns
+                    .iter()
+                    .zip(row)
+                    .map(|(col, val)| (col.name.clone(), val.clone()))
+                    .collect()
+            })
+            .collect()
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -111,6 +131,7 @@ pub async fn list_schemas(client: &tokio_postgres::Client) -> eyre::Result<Query
     let sql = "
     SELECT *
     FROM information_schema.schemata
+    WHERE schema_name NOT IN ('pg_catalog', 'pg_toast')
     ORDER BY schema_name";
     query(client, sql, &[]).await
 }
@@ -119,8 +140,67 @@ pub async fn list_databases(client: &tokio_postgres::Client) -> eyre::Result<Que
     let sql = "
     SELECT *
     FROM pg_database
+    WHERE datname NOT IN ('template0', 'template1')
     ORDER BY datname";
     query(client, sql, &[]).await
+}
+
+pub async fn table_ddl(client: &tokio_postgres::Client, table_name: &str) -> eyre::Result<String> {
+    // precision = np_radix ^ np_precision
+    // typically uses 2 or 10 as the radix, e.g. 2^32 or 10^20
+    let sql = "
+    SELECT
+      column_name,
+      column_default,
+      is_nullable,
+      data_type,
+      character_maximum_length,
+      numeric_precision,
+      -- numeric_precision_radix,
+      numeric_scale
+    FROM information_schema.columns
+    WHERE table_name = $1
+    ORDER BY ordinal_position";
+    let res = query(client, sql, &[&table_name]).await?;
+
+    let column_defs = res
+        .row_maps()
+        .into_iter()
+        .map(|row| {
+            let prec_scale = if row["numeric_precision"].is_null() {
+                None
+            } else {
+                Some(format!(
+                    "({}, {})",
+                    row["numeric_precision"].as_i64().unwrap(),
+                    row["numeric_scale"].as_i64().unwrap(),
+                ))
+            };
+
+            // TODO: abbreviate data types when possible, e.g. character varying -> varchar
+            let char_len = if row["character_maximum_length"].is_null() {
+                None
+            } else {
+                Some(format!(
+                    "({})",
+                    row["character_maximum_length"].as_i64().unwrap()
+                ))
+            };
+
+            format!(
+                "{} {}{}",
+                row["column_name"].as_str().unwrap(),
+                row["data_type"].as_str().unwrap(),
+                prec_scale.or(char_len).as_deref().unwrap_or("")
+            )
+        })
+        .collect::<Vec<_>>();
+
+    Ok(format!(
+        "CREATE TABLE {} (\n  {}\n);",
+        table_name,
+        column_defs.join(",\n  ")
+    ))
 }
 
 pub async fn query(
@@ -128,15 +208,8 @@ pub async fn query(
     raw_query: &str,
     params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
 ) -> eyre::Result<QueryResult> {
-    let query = match raw_query.split_once(';') {
-        None => raw_query,
-        Some((q, _)) => {
-            tracing::warn!("query contained more than one statement");
-            q
-        }
-    };
-
-    let stmt = client.prepare(query).await?;
+    let query = parse_query(raw_query);
+    let stmt = client.prepare(&query).await?;
 
     let columns = stmt
         .columns()
@@ -164,12 +237,13 @@ pub async fn query(
         Ok(QueryResult {
             columns,
             rows: data_rows,
+            is_ddl: is_ddl(&query),
         })
     } else {
         // fall back on simple query (uses TEXT instead of BINARY encoding)
         tracing::info!("falling back on TEXT encoding");
 
-        let rows = client.simple_query(query).await?;
+        let rows = client.simple_query(&query).await?;
 
         let mut data_rows: Vec<Vec<serde_json::Value>> = Vec::with_capacity(rows.len());
         for cmd in rows {
@@ -191,8 +265,69 @@ pub async fn query(
         Ok(QueryResult {
             columns,
             rows: data_rows,
+            is_ddl: is_ddl(&query),
         })
     }
+}
+
+fn parse_query(query: &str) -> String {
+    // remove any comments
+    let mut chars = query.chars().peekable();
+    let mut acc = String::new();
+
+    while let Some(c) = chars.next() {
+        match c {
+            '-' => {
+                if chars.next_if(|&c| c == '-').is_some() {
+                    // we're in a line comment, trim until newline
+                    while let Some(c) = chars.next() {
+                        if c == '\n' {
+                            break;
+                        }
+                    }
+                } else {
+                    acc.push('-');
+                }
+            }
+            '/' => {
+                if chars.next_if(|&c| c == '*').is_some() {
+                    loop {
+                        // we're in a block comment, trim until close delimiter
+                        match chars.next() {
+                            Some('*') => {
+                                if chars.next_if(|&c| c == '/').is_some() {
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                } else {
+                    acc.push('/');
+                }
+            }
+            _ => acc.push(c),
+        };
+    }
+
+    let query = acc.trim().to_string();
+
+    // only take the first statement
+    match query.split_once(';') {
+        None => query,
+        Some((q, "")) => q.to_string(),
+        Some((q, _)) => {
+            tracing::warn!("query contained more than one statement");
+            q.to_string()
+        }
+    }
+}
+
+fn is_ddl(query: &str) -> bool {
+    let query = query.to_ascii_lowercase();
+    ["create", "alter", "drop", "truncate", "comment"]
+        .iter()
+        .any(|verb| query.contains(verb))
 }
 
 fn col_supported(col: &tokio_postgres::Column) -> bool {

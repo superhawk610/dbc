@@ -2,7 +2,7 @@ use poem::{
     EndpointExt, Route, Server, get,
     listener::TcpListener,
     post,
-    web::{Data, Json},
+    web::{Data, Json, Path},
 };
 use serde::Deserialize;
 use std::sync::{Arc, RwLock};
@@ -84,7 +84,8 @@ async fn main() -> eyre::Result<()> {
             Route::new()
                 .at("/databases", get(get_databases))
                 .at("/schemas", get(get_schemas))
-                .at("/tables", get(get_tables)),
+                .at("/tables", get(get_tables))
+                .at("/ddl/table/:table_name", get(get_table_ddl)),
         )
         .at("/config", get(get_config).put(update_config))
         .at("/query", post(handle_query))
@@ -149,16 +150,26 @@ async fn get_tables(
     Ok(Json(dbc::db::list_tables(&conn).await?))
 }
 
+#[poem::handler]
+async fn get_table_ddl(
+    Data(state): Data<&Arc<dbc::State>>,
+    Path(table_name): Path<String>,
+) -> eyre::Result<Json<serde_json::Value>> {
+    let conn = state.pool.get_conn().await?;
+    let ddl = dbc::db::table_ddl(&conn, &table_name).await?;
+    Ok(Json(serde_json::json!({ "ddl": ddl })))
+}
+
 #[derive(Deserialize)]
-struct Query {
-    query: String,
+struct QueryParams {
+    pub query: String,
 }
 
 #[poem::handler]
 async fn handle_query(
     Data(state): Data<&Arc<dbc::State>>,
-    Json(query): Json<Query>,
+    Json(params): Json<QueryParams>,
 ) -> eyre::Result<Json<dbc::db::QueryResult>> {
     let conn = state.pool.get_conn().await?;
-    Ok(Json(dbc::db::query(&conn, &query.query, &[]).await?))
+    Ok(Json(dbc::db::query(&conn, &params.query, &[]).await?))
 }

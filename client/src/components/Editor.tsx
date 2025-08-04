@@ -5,8 +5,12 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Editor as MonacoEditor, loader, Monaco } from "@monaco-editor/react";
+import { loader, Monaco } from "@monaco-editor/react";
 import { editor as editorNS } from "monaco-editor";
+import { HiX as XIcon } from "react-icons/hi";
+import EditorTab from "./EditorTab.tsx";
+
+export const LAST_QUERY = "lastQuery";
 
 const THEME_LIST_JSON = "https://unpkg.com/monaco-themes/themes/themelist.json";
 
@@ -38,8 +42,22 @@ export interface Props {
   toolbar?: React.ReactNode;
 }
 
+export interface EditorRef {
+  getContents: () => string;
+  focus: () => void;
+  insert: (text: string) => void;
+  openTab: (name: string, contents: string) => void;
+}
+
 export default forwardRef(
   function Editor({ onClick, onClickLabel, sidebar, toolbar }: Props, ref) {
+    const [tabs, setTabs] = useState([{
+      name: "Script",
+      contents: globalThis.localStorage.getItem(LAST_QUERY) ||
+        "-- enter query here\n",
+    }]);
+    const [activeTabIndex, setActiveTabIndex] = useState(0);
+
     const [showEditor, setShowEditor] = useState(false);
     const monacoRef = useRef({ definedThemes: {} } as MonacoRef);
     const [themes, setThemes] = useState<Record<string, string>>(
@@ -49,12 +67,30 @@ export default forwardRef(
       globalThis.localStorage.getItem("monaco-theme") ?? "vs-dark",
     );
 
+    function chooseTab(tabs: any[], tabIndex: number) {
+      // save current tab's contents
+      setTabs(
+        tabs.with(activeTabIndex, {
+          ...tabs[activeTabIndex],
+          contents: monacoRef.current.editor.getValue(),
+        }),
+      );
+
+      // update editor with new tab's contents
+      monacoRef.current.editor.setValue(tabs[tabIndex].contents);
+
+      setActiveTabIndex(tabIndex);
+    }
+
     useImperativeHandle(ref, () => ({
       getContents: () => monacoRef.current.editor.getValue(),
       focus: () => monacoRef.current.editor.focus(),
       insert: (text: string) =>
         monacoRef.current.editor.trigger("keyboard", "type", { text }),
-    }));
+      openTab: (name: string, contents: string) => {
+        chooseTab([...tabs, { name, contents }], tabs.length);
+      },
+    }), [tabs]);
 
     useEffect(() => {
       (async () => {
@@ -74,50 +110,98 @@ export default forwardRef(
 
     return (
       <>
-        <div className="h-[30vh] flex-0 flex flex-row">
+        <div className="flex-1 flex flex-row">
           {sidebar}
 
-          <div className="flex-1">
-            {!showEditor ? <div className="h-[30vh]" /> : (
-              <MonacoEditor
-                height="30vh"
-                theme={activeTheme}
-                defaultLanguage="sql"
-                defaultValue={"-- enter query here\n"}
-                options={{
-                  fontSize: 15,
-                  minimap: {
-                    enabled: false,
-                  },
-                }}
-                onMount={(editor: editorNS.IStandaloneCodeEditor) => {
-                  monacoRef.current.editor = editor;
-                  editor.setPosition({ lineNumber: 2, column: 0 });
-                  editor.focus();
+          <div className="flex-1 border-l-2 border-base-content/10">
+            <div className="flex flex-col h-full">
+              <div className="flex bg-base-300">
+                {tabs.length > 1 && tabs.map((tab, idx) => {
+                  const tabName = tab.name || `Tab ${idx + 1}`;
+                  const parts = tabName.split(" / ");
 
-                  if (onClickLabel) {
-                    editor.addAction({
-                      id: "editor-action",
-                      label: onClickLabel,
-                      keybindings: [
-                        monacoRef.current.monaco.KeyMod.CtrlCmd |
-                        monacoRef.current.monaco.KeyCode.Enter,
-                      ],
-                      contextMenuGroupId: "2_commands",
-                      run: () => {
-                        onClick?.();
-                      },
-                    });
+                  let prefix = null;
+                  let name = null;
+                  if (parts.length > 1) {
+                    prefix = `${parts.slice(0, -1).join(" / ")} /`;
+                    name = parts[parts.length - 1];
+                  } else {
+                    name = parts.join();
                   }
-                }}
-              />
-            )}
+
+                  return (
+                    <div
+                      role="button"
+                      key={idx}
+                      className={`
+                      flex justify-between px-3 py-1 w-48 text-sm text-left text-ellipsis
+                      cursor-pointer border-r border-base-content/10 rounded-t-lg
+                    ${
+                        idx === activeTabIndex
+                          ? "bg-primary text-primary-content hover:bg-primary/90"
+                          : "bg-base-100 hover:bg-base-100/70"
+                      }`}
+                      onClick={() => chooseTab(tabs, idx)}
+                    >
+                      <span>
+                        {prefix && (
+                          <span className="opacity-40 pr-1">{prefix}</span>
+                        )}
+                        {name}
+                      </span>
+                      <button
+                        type="button"
+                        className={`cursor-pointer px-1 -mr-1 ${
+                          idx === activeTabIndex
+                            ? "text-primary-content/60"
+                            : "text-base-content/60"
+                        }`}
+                        onClick={(ev) => {
+                          // stop propagation since we're nested inside a tab button
+                          // (and we don't want to switch to the tab we're closing)
+                          ev.stopPropagation();
+
+                          // remove the closed tab
+                          setTabs(tabs.toSpliced(idx, 1));
+
+                          if (idx < activeTabIndex) {
+                            // if we closed a tab to the left, decrement the active index
+                            setActiveTabIndex(activeTabIndex - 1);
+                          } else if (idx === activeTabIndex) {
+                            // if we closed the active tab, choose the new active tab
+                            // and set the editor's contents accordingly
+                            const newIndex = idx === 0 ? 1 : idx - 1;
+                            monacoRef.current.editor.setValue(
+                              tabs[newIndex].contents,
+                            );
+                            setActiveTabIndex(newIndex);
+                          }
+                        }}
+                      >
+                        <XIcon />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {!showEditor ? <div className="h-[30vh]" /> : (
+                <EditorTab
+                  theme={activeTheme}
+                  monacoRef={monacoRef.current}
+                  defaultValue={tabs[activeTabIndex].contents}
+                  onClickLabel={onClickLabel}
+                  onClick={onClick}
+                />
+              )}
+            </div>
           </div>
         </div>
 
         <div className="flex flex-row justify-between gap-1 py-2 px-4">
           <div className="flex flex-row gap-1">
             <select
+              title="Editor Theme"
               className="select select-xs select-ghost m-2 w-[200px]"
               value={activeTheme}
               onChange={async (e) => {
