@@ -2,18 +2,23 @@ import { HiOutlineDatabase as DatabaseIcon } from "react-icons/hi";
 import ThemeSelect from "./ThemeSelect.tsx";
 import SettingsModal from "./SettingsModal.tsx";
 
-export default function Navbar() {
+export interface Props {
+  children?: React.ReactNode;
+}
+
+export default function Navbar({ children }: Props) {
   return (
     <div className="navbar">
       <div className="flex-1">
         <a href="/" className="btn btn-ghost text-xl">
           <DatabaseIcon /> dbc
-          <span className="pl-2 pt-1 text-xs text-gray-500">
+          <span className="pl-2 pt-1 text-xs text-base-content-300/60">
             database client
           </span>
         </a>
       </div>
-      <div className="flex-none gap-2">
+      <div className="flex-none space-x-2">
+        {children}
         <SettingsModal />
         <ThemeSelect />
       </div>

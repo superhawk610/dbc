@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { HiOutlineCog as SettingsIcon } from "react-icons/hi";
 import Connection from "../models/connection.ts";
 import Modal, { closeModal } from "./Modal.tsx";
 import Fieldset from "./form/Fieldset.tsx";
@@ -35,7 +36,11 @@ export default function SettingsModal() {
   return (
     <Modal
       heading="Settings ⚙"
-      buttonText="Settings"
+      buttonText={
+        <>
+          <SettingsIcon /> Settings
+        </>
+      }
     >
       <Modal.Body className="pt-4">
         <form

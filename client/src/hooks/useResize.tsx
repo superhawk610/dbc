@@ -2,18 +2,21 @@ import { RefObject, useEffect, useLayoutEffect } from "react";
 
 export interface UseResizeHook {
   minHeight: number;
+  defaultHeight: number | null;
   resizeRef: RefObject<HTMLElement | null>;
   resizeHandleRef: RefObject<HTMLElement | null>;
 }
 
 export default function useResize(
-  { minHeight, resizeRef, resizeHandleRef }: UseResizeHook,
+  { minHeight, defaultHeight, resizeRef, resizeHandleRef }: UseResizeHook,
 ) {
   useLayoutEffect(() => {
-    resizeRef.current!.style.height = `${minHeight}px`;
-  }, []);
+    resizeRef.current!.style.height = defaultHeight ? `${defaultHeight}px` : "";
+  }, [defaultHeight]);
 
   useEffect(() => {
+    if (!resizeHandleRef.current) return;
+
     let height = minHeight;
     let y = -1;
 
@@ -49,5 +52,5 @@ export default function useResize(
         handleMouseDown,
       );
     };
-  }, []);
+  }, [resizeHandleRef.current]);
 }

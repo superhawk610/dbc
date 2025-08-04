@@ -6,7 +6,7 @@ const ACTIVE_THEME = globalThis.localStorage.getItem("theme");
 export default function ThemeSelect() {
   return (
     <div className="dropdown dropdown-end">
-      <div tabIndex={0} role="button" className="btn m-1">
+      <div tabIndex={0} role="button" className="btn btn-sm">
         Theme
         <svg
           width="12px"

@@ -92,8 +92,10 @@ pub struct QueryResult {
     pub is_ddl: bool,
 }
 
+pub type QueryRows = Vec<HashMap<String, serde_json::Value>>;
+
 impl QueryResult {
-    fn row_maps(&self) -> Vec<HashMap<String, serde_json::Value>> {
+    pub fn row_maps(&self) -> Vec<HashMap<String, serde_json::Value>> {
         self.rows
             .iter()
             .map(|row| {

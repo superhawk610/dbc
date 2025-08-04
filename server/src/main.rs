@@ -129,25 +129,23 @@ async fn update_config(
 #[poem::handler]
 async fn get_databases(
     Data(state): Data<&Arc<dbc::State>>,
-) -> eyre::Result<Json<dbc::db::QueryResult>> {
+) -> eyre::Result<Json<dbc::db::QueryRows>> {
     let conn = state.pool.get_conn().await?;
-    Ok(Json(dbc::db::list_databases(&conn).await?))
+    Ok(Json(dbc::db::list_databases(&conn).await?.row_maps()))
 }
 
 #[poem::handler]
 async fn get_schemas(
     Data(state): Data<&Arc<dbc::State>>,
-) -> eyre::Result<Json<dbc::db::QueryResult>> {
+) -> eyre::Result<Json<dbc::db::QueryRows>> {
     let conn = state.pool.get_conn().await?;
-    Ok(Json(dbc::db::list_schemas(&conn).await?))
+    Ok(Json(dbc::db::list_schemas(&conn).await?.row_maps()))
 }
 
 #[poem::handler]
-async fn get_tables(
-    Data(state): Data<&Arc<dbc::State>>,
-) -> eyre::Result<Json<dbc::db::QueryResult>> {
+async fn get_tables(Data(state): Data<&Arc<dbc::State>>) -> eyre::Result<Json<dbc::db::QueryRows>> {
     let conn = state.pool.get_conn().await?;
-    Ok(Json(dbc::db::list_tables(&conn).await?))
+    Ok(Json(dbc::db::list_tables(&conn).await?.row_maps()))
 }
 
 #[poem::handler]

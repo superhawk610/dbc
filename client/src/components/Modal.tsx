@@ -32,7 +32,7 @@ function CloseModal(props: ButtonProps) {
 }
 
 export interface Props {
-  buttonText: string;
+  buttonText: React.ReactNode;
   heading: string;
   actions?: React.ReactNode;
   children?: React.ReactNode;
@@ -45,13 +45,13 @@ function Modal({ buttonText, heading, children }: Props) {
     <>
       <button
         type="button"
-        className="btn"
+        className="btn btn-sm"
         onClick={() => dialogRef.current!.showModal()}
       >
         {buttonText}
       </button>
 
-      <dialog ref={dialogRef} id="my_modal_1" className="modal">
+      <dialog ref={dialogRef} className="modal">
         <div className="modal-box">
           <h3 className="font-bold text-lg">{heading}</h3>
           {children}
