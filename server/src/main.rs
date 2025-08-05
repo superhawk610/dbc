@@ -1,8 +1,12 @@
+use futures_util::{SinkExt, StreamExt};
 use poem::{
-    EndpointExt, Route, Server, get,
+    EndpointExt, IntoResponse, Route, Server, get,
     listener::TcpListener,
     post,
-    web::{Data, Json, Path},
+    web::{
+        Data, Json, Path,
+        websocket::{Message, WebSocket},
+    },
 };
 use serde::Deserialize;
 use std::sync::{Arc, RwLock};
@@ -10,6 +14,9 @@ use std::sync::{Arc, RwLock};
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     dotenv::dotenv().ok();
+
+    // start up stream worker
+    dbc::stream::init();
 
     if let Err(err) =
         dbc::persistence::load_encryption_key(std::env::var("ENCRYPTION_KEY").ok().as_deref())
@@ -79,6 +86,7 @@ async fn main() -> eyre::Result<()> {
     }
 
     let router = Route::new()
+        .at("/:channel", get(websocket))
         .nest(
             "/db",
             Route::new()
@@ -102,6 +110,16 @@ async fn main() -> eyre::Result<()> {
     .await?;
 
     Ok(())
+}
+
+#[poem::handler]
+async fn websocket(ws: WebSocket, Path(channel): Path<String>) -> impl IntoResponse {
+    dbg!(channel);
+    ws.on_upgrade(|mut socket| async move {
+        if let Some(Ok(Message::Text(text))) = socket.next().await {
+            let _ = socket.send(Message::Text("hello, world!".into())).await;
+        }
+    })
 }
 
 #[poem::handler]

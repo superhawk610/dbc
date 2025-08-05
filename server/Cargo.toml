@@ -8,9 +8,10 @@ aes-gcm = "0.10.3"
 bon = "3.5.1"
 dotenv = "0.15.0"
 eyre = "0.6.12"
+futures-util = "0.3.31"
 hex = "0.4.3"
 native-tls = "0.2.14"
-poem = { version = "3.1.8", features = ["eyre06"] }
+poem = { version = "3.1.8", features = ["eyre06", "websocket"] }
 postgres-native-tls = "0.5.1"
 serde = "1.0.219"
 serde_json = "1.0.140"
