@@ -5,9 +5,11 @@ import { get, post } from "./api.ts";
 import useResize from "./hooks/useResize.tsx";
 import Navbar from "./components/Navbar.tsx";
 import Editor, { EditorRef, LAST_QUERY } from "./components/Editor.tsx";
-import QueryRow, { QueryResult, QueryValue } from "./models/query.ts";
+import QueryResults from "./components/QueryResults.tsx";
+import Pagination from "./components/Pagination.tsx";
+import QueryRow, { QueryResult } from "./models/query.ts";
 
-const EDITOR_HEIGHT = { min: 200, default: 400 };
+const EDITOR_HEIGHT = { min: 100, default: 400 };
 
 function App() {
   const editorRef = useRef<EditorRef>(null);
@@ -82,7 +84,12 @@ function App() {
         </button>
       </Navbar>
 
-      <div ref={resizeRef} className="flex-shrink-0 flex flex-col h-full">
+      <div
+        ref={resizeRef}
+        className={`flex flex-col ${
+          showResults ? "" : "flex-shrink-0 flex-grow-1"
+        }`}
+      >
         <Editor
           ref={editorRef}
           onClick={dispatchQuery}
@@ -129,7 +136,7 @@ function App() {
             <>
               <select
                 title="Connection"
-                className="select select-xs select-ghost m-2 w-[200px]"
+                className="select select-xs select-ghost m-2 w-[200px] focus:outline-primary"
               >
                 <option value="default">
                   default
@@ -139,7 +146,7 @@ function App() {
               <select
                 title="Database"
                 disabled={!databases}
-                className="select select-xs select-ghost m-2 w-[200px]"
+                className="select select-xs select-ghost m-2 w-[200px] focus:outline-primary"
               >
                 {databases?.map((row) => (
                   <option
@@ -154,7 +161,7 @@ function App() {
               <select
                 title="Schema"
                 disabled={!schemas}
-                className="select select-xs select-ghost m-2 w-[200px]"
+                className="select select-xs select-ghost m-2 w-[200px] focus:outline-primary"
               >
                 {schemas?.map((row) => (
                   <option
@@ -177,72 +184,11 @@ function App() {
             className="bg-base-content/10 h-1 cursor-ns-resize z-[10]"
           />
 
-          {!res && <p className="mt-4 px-6 text-sm">No results.</p>}
-
-          <div className="flex-1 overflow-auto">
-            <table className="table table-zebra table-pin-rows table-compact">
-              {res && (
-                <thead>
-                  <tr>
-                    {res.columns.map((column) => (
-                      <th key={column.name} className="font-semibold">
-                        {column.name}
-                        <span className="pl-2 font-normal text-xs text-base-content-300/60">
-                          {column.type}
-                        </span>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-              )}
-              <tbody>
-                {error
-                  ? (
-                    <tr>
-                      <td className="font-mono text-red-400">
-                        {error}
-                      </td>
-                    </tr>
-                  )
-                  : !res
-                  ? null
-                  : res.rows.length === 0
-                  ? (
-                    <tr>
-                      <td colSpan={res.columns.length}>
-                        No results.
-                      </td>
-                    </tr>
-                  )
-                  : res.rows.map((row, idx) => (
-                    <tr key={idx}>
-                      {row.map((value: QueryValue, idx: number) => (
-                        <td key={idx}>
-                          {value === true
-                            ? "true"
-                            : value === false
-                            ? "false"
-                            : value === null
-                            ? (
-                              <span className="text-gray-500">
-                                &lt;null&gt;
-                              </span>
-                            )
-                            : Array.isArray(value)
-                            ? JSON.stringify(value)
-                            : value}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
-
-          {res && (
-            <div className="p-4 text-sm text-base-content-300/60">
-              {res.rows.length} rows
-            </div>
+          {!res ? <p className="mt-4 px-6 text-sm">No results.</p> : (
+            <>
+              <QueryResults result={res} error={error} />
+              <Pagination result={res} />
+            </>
           )}
         </div>
       )}

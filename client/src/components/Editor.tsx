@@ -263,7 +263,7 @@ export default forwardRef(
           <div className="flex flex-row gap-1">
             <select
               title="Editor Theme"
-              className="select select-xs select-ghost m-2 w-[200px]"
+              className="select select-xs select-ghost m-2 w-[200px] focus:outline-primary"
               value={activeTheme}
               onChange={async (e) => {
                 const newTheme = e.target.value;
