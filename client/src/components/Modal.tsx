@@ -1,14 +1,20 @@
-import React, { useRef } from "react";
-import { ButtonProps, DivProps } from "react-html-props";
+import React, { useRef, useState } from "react";
+import { DivProps } from "react-html-props";
 
-export function closeModal(ev: React.MouseEvent) {
-  ev.preventDefault();
-  (ev.target as HTMLElement)!.closest("dialog")!.close();
+export interface ModalActions {
+  close: () => void;
 }
+
+export const closeModal =
+  ({ close }: ModalActions) => (ev: React.MouseEvent) => {
+    ev.preventDefault();
+    (ev.target as HTMLElement)!.closest("dialog")!.close();
+    close();
+  };
 
 function ModalBody({ children, ...props }: DivProps) {
   return (
-    <div className="py-4" {...props}>
+    <div className="pt-4" {...props}>
       {children}
     </div>
   );
@@ -22,23 +28,15 @@ function ModalActions({ children, className, ...props }: DivProps) {
   );
 }
 
-function CloseModal(props: ButtonProps) {
-  return (
-    <form method="dialog">
-      {/* if there is a button in form, it will close the modal */}
-      <button className="btn" {...props}>Close</button>
-    </form>
-  );
-}
-
 export interface Props {
   buttonText: React.ReactNode;
   heading: string;
   actions?: React.ReactNode;
-  children?: React.ReactNode;
+  children: (actions: ModalActions) => React.ReactNode;
 }
 
 function Modal({ buttonText, heading, children }: Props) {
+  const [showBody, setShowBody] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   return (
@@ -46,7 +44,10 @@ function Modal({ buttonText, heading, children }: Props) {
       <button
         type="button"
         className="btn btn-sm"
-        onClick={() => dialogRef.current!.showModal()}
+        onClick={() => {
+          setShowBody(true);
+          dialogRef.current!.showModal();
+        }}
       >
         {buttonText}
       </button>
@@ -54,7 +55,7 @@ function Modal({ buttonText, heading, children }: Props) {
       <dialog ref={dialogRef} className="modal">
         <div className="modal-box">
           <h3 className="font-bold text-lg">{heading}</h3>
-          {children}
+          {showBody && children({ close: () => setShowBody(false) })}
         </div>
       </dialog>
     </>
@@ -63,5 +64,4 @@ function Modal({ buttonText, heading, children }: Props) {
 
 Modal.Body = ModalBody;
 Modal.Actions = ModalActions;
-Modal.CloseButton = CloseModal;
 export default Modal;

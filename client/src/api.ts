@@ -1,4 +1,5 @@
 const baseUrl = `http://${import.meta.env.VITE_API_BASE}`;
+const socketUrl = `ws://${import.meta.env.VITE_API_BASE}`;
 
 const NO_CONTENT = 204;
 
@@ -27,3 +28,5 @@ export const get = req("GET");
 export const post = req("POST");
 export const put = req("PUT");
 export const del = req("DELETE");
+export const createSocket = (channel: string) =>
+  new WebSocket(`${socketUrl}/${channel}`);

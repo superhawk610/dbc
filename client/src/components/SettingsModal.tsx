@@ -42,37 +42,47 @@ export default function SettingsModal() {
         </>
       }
     >
-      <Modal.Body className="pt-4">
-        <form
-          className="flex flex-col gap-4"
-          onSubmit={handleSubmit}
-          onChange={() => setDirty(true)}
-        >
-          {!config
-            ? <span className="loading loading-infinity loading-xl" />
-            : (
-              config.connections.map((conn, idx) => (
-                <Fieldset key={idx} heading="Connection details">
-                  <Field name="name" defaultValue={conn.name} />
-                  <Field name="host" defaultValue={conn.host} />
-                  <Field name="port" defaultValue={conn.port} type="number" />
-                  <Field name="username" defaultValue={conn.username} />
-                  <Field name="password" defaultValue={conn.password} />
-                  <Field name="database" defaultValue={conn.database} />
-                </Fieldset>
-              ))
-            )}
+      {(actions) => (
+        <Modal.Body>
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={handleSubmit}
+            onChange={() => setDirty(true)}
+          >
+            {!config
+              ? <span className="loading loading-infinity loading-xl" />
+              : (
+                config.connections.map((conn, idx) => (
+                  <Fieldset key={idx} heading="Connection details">
+                    <Field name="name" defaultValue={conn.name} />
+                    <Field name="host" defaultValue={conn.host} />
+                    <Field name="port" defaultValue={conn.port} type="number" />
+                    <Field name="username" defaultValue={conn.username} />
+                    <Field name="password" defaultValue={conn.password} />
+                    <Field name="database" defaultValue={conn.database} />
+                  </Fieldset>
+                ))
+              )}
 
-          <Modal.Actions className="mt-2">
-            <button disabled={!dirty} type="submit" className="btn btn-primary">
-              Save
-            </button>
-            <button type="button" className="btn" onClick={closeModal}>
-              Close
-            </button>
-          </Modal.Actions>
-        </form>
-      </Modal.Body>
+            <Modal.Actions className="mt-2">
+              <button
+                disabled={!dirty}
+                type="submit"
+                className="btn btn-primary"
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={closeModal(actions)}
+              >
+                Close
+              </button>
+            </Modal.Actions>
+          </form>
+        </Modal.Body>
+      )}
     </Modal>
   );
 }

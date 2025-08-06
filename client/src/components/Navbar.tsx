@@ -1,6 +1,7 @@
 import { HiOutlineDatabase as DatabaseIcon } from "react-icons/hi";
 import ThemeSelect from "./ThemeSelect.tsx";
 import SettingsModal from "./SettingsModal.tsx";
+import StreamModal from "./StreamModal.tsx";
 
 export interface Props {
   children?: React.ReactNode;
@@ -19,6 +20,7 @@ export default function Navbar({ children }: Props) {
       </div>
       <div className="flex-none space-x-2">
         {children}
+        <StreamModal />
         <SettingsModal />
         <ThemeSelect />
       </div>

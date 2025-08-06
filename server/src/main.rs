@@ -10,13 +10,14 @@ use poem::{
 };
 use serde::Deserialize;
 use std::sync::{Arc, RwLock};
+use tokio::sync::Mutex;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     dotenv::dotenv().ok();
 
     // start up stream worker
-    dbc::stream::init();
+    let worker = dbc::stream::StreamWorker::new();
 
     if let Err(err) =
         dbc::persistence::load_encryption_key(std::env::var("ENCRYPTION_KEY").ok().as_deref())
@@ -68,6 +69,7 @@ async fn main() -> eyre::Result<()> {
     let state = Arc::new(dbc::State {
         pool,
         config: RwLock::new(store),
+        worker: Mutex::new(worker),
     });
 
     async fn format_eyre<E: poem::Endpoint>(
@@ -113,11 +115,31 @@ async fn main() -> eyre::Result<()> {
 }
 
 #[poem::handler]
-async fn websocket(ws: WebSocket, Path(channel): Path<String>) -> impl IntoResponse {
+async fn websocket(
+    ws: WebSocket,
+    Path(channel): Path<String>,
+    Data(state): Data<&Arc<dbc::State>>,
+) -> impl IntoResponse {
     dbg!(channel);
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+    let mut worker = state.worker.lock().await;
+    worker.subscribe(tx).await.unwrap();
+
     ws.on_upgrade(|mut socket| async move {
         if let Some(Ok(Message::Text(text))) = socket.next().await {
+            dbg!(text);
+
             let _ = socket.send(Message::Text("hello, world!".into())).await;
+        }
+
+        loop {
+            if let Some(line) = rx.recv().await {
+                match socket.send(Message::Text(line)).await {
+                    Err(_) => break,
+                    _ => {}
+                }
+            }
         }
     })
 }

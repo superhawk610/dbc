@@ -19,3 +19,7 @@
 .sql-active-statement-margin {
   @apply bg-primary/20;
 }
+
+.modal-box {
+  max-height: calc(100vh - 4rem);
+}
