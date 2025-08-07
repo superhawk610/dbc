@@ -17,7 +17,16 @@
 }
 
 .sql-active-statement-margin {
-  @apply bg-primary/20;
+  @apply bg-primary/10;
+  &::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 2.5px;
+    height: 100%;
+    @apply bg-primary;
+  }
 }
 
 .modal-box {

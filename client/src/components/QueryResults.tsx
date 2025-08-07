@@ -1,11 +1,23 @@
 import { PaginatedQueryResult, QueryValue } from "../models/query.ts";
 
 export interface Props {
-  page: PaginatedQueryResult;
+  page: PaginatedQueryResult | null;
   error: string | null;
 }
 
 export default function QueryResults({ page, error }: Props) {
+  if (error) {
+    return (
+      <p className="mt-4 px-6 font-mono text-error text-sm">
+        {error}
+      </p>
+    );
+  }
+
+  if (!page) {
+    return <p className="mt-4 px-6 text-sm">No results.</p>;
+  }
+
   return (
     <div className="flex-1 overflow-auto bg-base-300">
       <table className="table table-sm table-zebra table-pin-rows table-compact rounded-none bg-base-100 whitespace-nowrap">
@@ -25,15 +37,7 @@ export default function QueryResults({ page, error }: Props) {
           </tr>
         </thead>
         <tbody>
-          {error
-            ? (
-              <tr>
-                <td className="font-mono text-error">
-                  {error}
-                </td>
-              </tr>
-            )
-            : page.entries.rows.length === 0
+          {page.entries.rows.length === 0
             ? (
               <tr>
                 <td colSpan={page.entries.columns.length}>

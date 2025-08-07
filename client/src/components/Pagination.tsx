@@ -6,25 +6,36 @@ import {
 import { PaginatedQueryResult } from "../models/query.ts";
 
 export interface Props {
-  page: PaginatedQueryResult;
+  query: PaginatedQueryResult;
+  page: number;
+  pageSize: number;
+  setPage: (page: number) => void;
+  setPageSize: (pageSize: number) => void;
 }
 
-export default function Pagination({ page }: Props) {
+export default function Pagination(
+  { query, page, pageSize, setPage, setPageSize }: Props,
+) {
+  const firstRow = (query.page - 1) * query.page_size + 1;
+  const lastRow = firstRow + query.page_size - 1;
   return (
     <div className="flex items-center space-x-2 p-4 text-sm bg-neutral/20 text-base-content/80">
       <div className="mr-auto">
-        {page.page_count} of {page.total_count} rows
+        Showing {firstRow} - {lastRow} of {query.total_count} rows
       </div>
       <div className="flex items-center space-x-1">
         <span>Page</span>
         <select
-          defaultValue={1}
+          value={page}
+          onChange={(ev) => setPage(Number(ev.target.value))}
           className="cursor-pointer hover:bg-white/10 rounded-full px-2 py-1 text-center select-ghost appearance-none focus:bg-white/10"
         >
-          <option value={1}>{page.page}</option>
+          {new Array(query.total_pages).fill(0).map((_, idx) => (
+            <option key={idx} value={idx + 1}>{idx + 1}</option>
+          ))}
         </select>
         <span>of</span>
-        <span className="ml-1">{page.total_pages}</span>
+        <span className="ml-1">{query.total_pages}</span>
       </div>
       <div className="flex items-center">
         <button
@@ -42,7 +53,8 @@ export default function Pagination({ page }: Props) {
       </div>
       <div className="flex items-center space-x-2">
         <select
-          defaultValue={page.page_size}
+          value={pageSize}
+          onChange={(ev) => setPageSize(Number(ev.target.value))}
           className="cursor-pointer hover:bg-white/10 rounded-full px-2 py-1 text-center select-ghost appearance-none focus:bg-white/10"
         >
           <option value={10}>10</option>

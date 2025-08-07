@@ -6,7 +6,7 @@ import React, {
   useState,
 } from "react";
 import { Editor as MonacoEditor, loader, Monaco } from "@monaco-editor/react";
-import { editor as editorNS, Range, Uri } from "monaco-editor";
+import { editor as editorNS, Position, Range, Uri } from "monaco-editor";
 import { HiX as XIcon } from "react-icons/hi";
 
 export const LAST_QUERY = "lastQuery";
@@ -32,15 +32,19 @@ const EDITOR_OPTIONS: editorNS.IStandaloneEditorConstructionOptions = {
   minimap: {
     enabled: false,
   },
+  lineNumbersMinChars: 4,
+  lineDecorationsWidth: 0,
 };
 
 interface MonacoRef {
   editor: editorNS.IStandaloneCodeEditor;
   monaco: Monaco;
   definedThemes: Record<string, boolean>;
-  decoration: string | null;
+  decorations: string[];
 }
 
+// TODO: look into using https://github.com/DTStack/monaco-sql-languages
+// for improved syntax highlighting and semantic parsing
 async function fetchTheme(theme: string, filename: string, ref: MonacoRef) {
   if (!(theme in DEFAULT_THEMES) && !ref.definedThemes[theme]) {
     const url = `https://unpkg.com/monaco-themes/themes/${filename}.json`;
@@ -49,6 +53,98 @@ async function fetchTheme(theme: string, filename: string, ref: MonacoRef) {
     ref.monaco.editor.defineTheme(theme, themeJson);
     ref.definedThemes[theme] = true;
   }
+}
+
+function excludeComments(line: string) {
+  const blockCommentStartIdx = line.indexOf("/*");
+  if (blockCommentStartIdx > -1) line = line.slice(0, blockCommentStartIdx);
+
+  const lineCommentStartIdx = line.indexOf("--");
+  if (lineCommentStartIdx > -1) line = line.slice(0, blockCommentStartIdx);
+
+  return line;
+}
+
+function activeQueryRange(
+  editor: editorNS.IStandaloneCodeEditor,
+  position: Position,
+): Range | null {
+  const text = editor.getValue();
+  const lines = text.split("\n");
+
+  const cursorLineIdx = position.lineNumber - 1;
+  let startLineIdx = cursorLineIdx;
+  let endLineIdx = cursorLineIdx;
+  const excludedLines = new Set();
+
+  // first, scan for comments and exclude any blank lines,
+  // lines entirely contained within a block comment, and
+  // lines that only contain a line comment
+  let inComment = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+
+    // skip line comments and empty lines
+    if (line === "" || line.startsWith("--")) {
+      excludedLines.add(i);
+      continue;
+    }
+
+    // exclude block comment start/end lines
+    if (line.startsWith("/*") || line.startsWith("*/")) {
+      excludedLines.add(i);
+    }
+
+    if (inComment && lines[i].includes("*/")) inComment = false;
+    if (inComment) excludedLines.add(i);
+    if (lines[i].includes("/*")) inComment = true;
+  }
+
+  // if we're on an excluded line, don't highlight anything
+  if (excludedLines.has(cursorLineIdx)) {
+    return null;
+  }
+
+  // move backwards to find start line
+  let prevLineIdx = cursorLineIdx;
+  for (let i = cursorLineIdx; i >= 0; i--) {
+    if (excludedLines.has(i)) continue;
+
+    if (i !== cursorLineIdx && excludeComments(lines[i]).includes(";")) {
+      startLineIdx = prevLineIdx;
+      break;
+    }
+
+    startLineIdx = i;
+    prevLineIdx = i;
+  }
+
+  // move forwards to find end line
+  for (let i = cursorLineIdx; i < lines.length; i++) {
+    if (excludedLines.has(i)) continue;
+
+    if (excludeComments(lines[i]).includes(";")) {
+      endLineIdx = i;
+      break;
+    }
+  }
+
+  return new Range(startLineIdx! + 1, 1, endLineIdx! + 1, 1);
+}
+
+function textInLineRange(
+  editor: editorNS.IStandaloneCodeEditor,
+  range: Range,
+): string {
+  const text = editor.getValue();
+  const lines = text.split("\n");
+  return lines.slice(range.startLineNumber - 1, range.endLineNumber).join("\n");
+}
+
+function activeQuery(editor: editorNS.IStandaloneCodeEditor): string | null {
+  const position = editor.getPosition();
+  const range = position ? activeQueryRange(editor, position) : null;
+  return range ? textInLineRange(editor, range) : null;
 }
 
 export interface Props {
@@ -67,6 +163,7 @@ export interface EditorTab {
 
 export interface EditorRef {
   getContents: () => string;
+  getActiveQuery: () => string;
   focus: () => void;
   insert: (text: string) => void;
   openTab: (tab: EditorTab) => void;
@@ -89,6 +186,7 @@ export default forwardRef(
 
     useImperativeHandle(ref, () => ({
       getContents: () => monacoRef.current.editor.getValue(),
+      getActiveQuery: () => activeQuery(monacoRef.current.editor),
       focus: () => monacoRef.current.editor.focus(),
       insert: (text: string) =>
         monacoRef.current.editor.trigger("keyboard", "type", { text }),
@@ -113,6 +211,45 @@ export default forwardRef(
         setShowEditor(true);
       })();
     }, []);
+
+    function onEditorMount(editor: editorNS.IStandaloneCodeEditor) {
+      monacoRef.current!.editor = editor;
+
+      // grab editor focus at 2nd line by default
+      // editor.setPosition({ lineNumber: 2, column: 0 });
+      // editor.focus();
+
+      // add click action to editor's context menu
+      if (onClickLabel) {
+        editor.addAction({
+          id: "editor-action",
+          label: onClickLabel,
+          keybindings: [
+            monacoRef.current!.monaco.KeyMod.CtrlCmd |
+            monacoRef.current!.monaco.KeyCode.Enter,
+          ],
+          contextMenuGroupId: "2_commands",
+          run: () => onClick?.(),
+        });
+      }
+
+      // attach cursor position listener
+      editor.onDidChangeCursorPosition(({ position }) => {
+        const model = editor.getModel()!;
+        const range = activeQueryRange(editor, position);
+
+        monacoRef.current.decorations = model.deltaDecorations(
+          monacoRef.current.decorations,
+          !range ? [] : [{
+            range,
+            options: {
+              isWholeLine: true,
+              marginClassName: "sql-active-statement-margin",
+            },
+          }],
+        );
+      });
+    }
 
     function closeTab(id: string, idx: number) {
       // remove the closed tab
@@ -206,53 +343,7 @@ export default forwardRef(
                   defaultLanguage={activeTab.language}
                   defaultValue={activeTab.contents}
                   options={EDITOR_OPTIONS}
-                  onMount={(editor: editorNS.IStandaloneCodeEditor) => {
-                    monacoRef.current!.editor = editor;
-
-                    // grab editor focus at 2nd line by default
-                    // editor.setPosition({ lineNumber: 2, column: 0 });
-                    // editor.focus();
-
-                    // add click action to editor's context menu
-                    if (onClickLabel) {
-                      editor.addAction({
-                        id: "editor-action",
-                        label: onClickLabel,
-                        keybindings: [
-                          monacoRef.current!.monaco.KeyMod.CtrlCmd |
-                          monacoRef.current!.monaco.KeyCode.Enter,
-                        ],
-                        contextMenuGroupId: "2_commands",
-                        run: () => {
-                          onClick?.();
-                        },
-                      });
-                    }
-
-                    // attach cursor position listener
-                    editor.onDidChangeCursorPosition((ev) => {
-                      console.log(ev.position);
-
-                      // TODO: figure out which statement we're currently editing
-                      // and highlight those lines; probably want to cache that
-                      // somewhere, since that's the line(s) we'll dispatch too
-
-                      // const model = editor.getModel()!;
-                      // const [decoration] = model.deltaDecorations(
-                      //   monacoRef.current.decoration
-                      //     ? [monacoRef.current.decoration]
-                      //     : [],
-                      //   [{
-                      //     range: new Range(1, 1, 3, 1),
-                      //     options: {
-                      //       isWholeLine: true,
-                      //       marginClassName: "sql-active-statement-margin",
-                      //     },
-                      //   }],
-                      // );
-                      // monacoRef.current.decoration = decoration;
-                    });
-                  }}
+                  onMount={onEditorMount}
                 />
               )}
             </div>
@@ -260,10 +351,10 @@ export default forwardRef(
         </div>
 
         <div className="flex items-center justify-between py-2 px-4">
-          <div className="flex items-center space-x-3">
+          <div className="flex-1 flex items-center space-x-3">
             <select
               title="Editor Theme"
-              className="select select-xs select-ghost w-[200px] focus:outline-primary"
+              className="select select-xs select-ghost shrink basis-[200px] focus:outline-primary"
               value={activeTheme}
               onChange={async (e) => {
                 const newTheme = e.target.value;
@@ -286,7 +377,7 @@ export default forwardRef(
             {toolbar}
           </div>
 
-          <div>
+          <div className="ml-24">
             {onClickLabel && (
               <button
                 type="button"

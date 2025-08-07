@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Modal, { closeModal, ModalActions } from "./Modal.tsx";
 import { createSocket } from "../api.ts";
 
@@ -34,7 +34,7 @@ function StreamModalBody({ actions }: Props) {
         ref={scrollRef}
         className="max-h-[400px] overflow-auto bg-neutral/80 rounded-md"
       >
-        <pre className="p-4 bg-neutral-content font-mono">{output}</pre>
+        <pre className="p-4 text-neutral-content font-mono">{output}</pre>
       </div>
       <Modal.Actions className="mt-2">
         <button

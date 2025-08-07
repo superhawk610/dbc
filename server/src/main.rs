@@ -201,6 +201,8 @@ async fn get_table_ddl(
 #[derive(Deserialize)]
 struct QueryParams {
     pub query: String,
+    pub page: usize,
+    pub page_size: usize,
 }
 
 #[poem::handler]
@@ -209,8 +211,7 @@ async fn handle_query(
     Json(params): Json<QueryParams>,
 ) -> eyre::Result<Json<dbc::db::PaginatedQueryResult>> {
     let conn = state.pool.get_conn().await?;
-    // FIXME: provide page/page_size from params
     Ok(Json(
-        dbc::db::paginated_query(&conn, &params.query, &[], 1, 25).await?,
+        dbc::db::paginated_query(&conn, &params.query, &[], params.page, params.page_size).await?,
     ))
 }

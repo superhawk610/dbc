@@ -9,7 +9,9 @@ export const closeModal =
   ({ close }: ModalActions) => (ev: React.MouseEvent) => {
     ev.preventDefault();
     (ev.target as HTMLElement)!.closest("dialog")!.close();
-    close();
+
+    // wait for modal to disappear from screen before hiding body
+    setTimeout(() => close(), 1_000);
   };
 
 function ModalBody({ children, ...props }: DivProps) {
@@ -46,7 +48,9 @@ function Modal({ buttonText, heading, children }: Props) {
         className="btn btn-sm"
         onClick={() => {
           setShowBody(true);
-          dialogRef.current!.showModal();
+
+          // try to let body render before showing
+          setTimeout(() => dialogRef.current!.showModal(), 0);
         }}
       >
         {buttonText}

@@ -23,6 +23,10 @@ function App() {
   const [schemas, setSchemas] = useState<QueryRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // TODO: prefetch more than the current page
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
   // TODO: switch between multiple connections
   useEffect(() => {
     (async () => {
@@ -47,16 +51,17 @@ function App() {
   });
 
   async function dispatchQuery() {
-    const query = editorRef.current!.getContents();
+    const contents = editorRef.current!.getContents();
+    const query = editorRef.current!.getActiveQuery() || contents;
 
     // store the query in local storage to be restored on page reload
-    globalThis.localStorage.setItem(LAST_QUERY, query);
+    globalThis.localStorage.setItem(LAST_QUERY, contents);
 
     // show results pane
     setShowResults(true);
 
     try {
-      const res = await post("/query", { query });
+      const res = await post("/query", { query, page, page_size: pageSize });
       setError(null);
       setRes(res);
 
@@ -86,9 +91,7 @@ function App() {
 
       <div
         ref={resizeRef}
-        className={`flex flex-col ${
-          showResults ? "" : "flex-shrink-0 flex-grow-1"
-        }`}
+        className={`flex flex-col ${showResults ? "" : "flex-grow-1"}`}
       >
         <Editor
           ref={editorRef}
@@ -139,7 +142,7 @@ function App() {
             <>
               <select
                 title="Connection"
-                className="select select-xs select-ghost w-[200px] focus:outline-primary"
+                className="select select-xs select-ghost shrink basis-[200px] focus:outline-primary"
               >
                 <option value="default">
                   default
@@ -149,7 +152,7 @@ function App() {
               <select
                 title="Database"
                 disabled={!databases}
-                className="select select-xs select-ghost w-[200px] focus:outline-primary"
+                className="select select-xs select-ghost shrink basis-[200px] focus:outline-primary"
               >
                 {databases?.map((row) => (
                   <option
@@ -164,7 +167,7 @@ function App() {
               <select
                 title="Schema"
                 disabled={!schemas}
-                className="select select-xs select-ghost w-[200px] focus:outline-primary"
+                className="select select-xs select-ghost shrink basis-[200px] focus:outline-primary"
               >
                 {schemas?.map((row) => (
                   <option
@@ -187,11 +190,15 @@ function App() {
             className="bg-base-content/10 h-1 cursor-ns-resize z-[10]"
           />
 
-          {!res ? <p className="mt-4 px-6 text-sm">No results.</p> : (
-            <>
-              <QueryResults page={res} error={error} />
-              <Pagination page={res} />
-            </>
+          <QueryResults page={res} error={error} />
+          {res && (
+            <Pagination
+              query={res}
+              page={page}
+              setPage={setPage}
+              pageSize={pageSize}
+              setPageSize={setPageSize}
+            />
           )}
         </div>
       )}
