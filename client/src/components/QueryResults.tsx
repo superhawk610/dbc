@@ -1,17 +1,17 @@
-import { QueryResult, QueryValue } from "../models/query.ts";
+import { PaginatedQueryResult, QueryValue } from "../models/query.ts";
 
 export interface Props {
-  result: QueryResult;
+  page: PaginatedQueryResult;
   error: string | null;
 }
 
-export default function QueryResults({ result, error }: Props) {
+export default function QueryResults({ page, error }: Props) {
   return (
     <div className="flex-1 overflow-auto bg-base-300">
       <table className="table table-sm table-zebra table-pin-rows table-compact rounded-none bg-base-100 whitespace-nowrap">
         <thead>
           <tr>
-            {result.columns.map((column) => (
+            {page.entries.columns.map((column) => (
               <th
                 key={column.name}
                 className="bg-neutral/70 text-neutral-content font-semibold"
@@ -33,15 +33,15 @@ export default function QueryResults({ result, error }: Props) {
                 </td>
               </tr>
             )
-            : result.rows.length === 0
+            : page.entries.rows.length === 0
             ? (
               <tr>
-                <td colSpan={result.columns.length}>
+                <td colSpan={page.entries.columns.length}>
                   No results.
                 </td>
               </tr>
             )
-            : result.rows.map((row, idx) => (
+            : page.entries.rows.map((row, idx) => (
               <tr key={idx}>
                 {row.map((value: QueryValue, idx: number) => (
                   <td key={idx} className="border-r border-neutral-500/10">

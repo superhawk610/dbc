@@ -3,17 +3,17 @@ import {
   HiChevronRight as RightIcon,
 } from "react-icons/hi";
 
-import { QueryResult } from "../models/query.ts";
+import { PaginatedQueryResult } from "../models/query.ts";
 
 export interface Props {
-  result: QueryResult;
+  page: PaginatedQueryResult;
 }
 
-export default function Pagination({ result }: Props) {
+export default function Pagination({ page }: Props) {
   return (
     <div className="flex items-center space-x-2 p-4 text-sm bg-neutral/20 text-base-content/80">
       <div className="mr-auto">
-        {result.rows.length} rows
+        {page.page_count} of {page.total_count} rows
       </div>
       <div className="flex items-center space-x-1">
         <span>Page</span>
@@ -21,10 +21,10 @@ export default function Pagination({ result }: Props) {
           defaultValue={1}
           className="cursor-pointer hover:bg-white/10 rounded-full px-2 py-1 text-center select-ghost appearance-none focus:bg-white/10"
         >
-          <option value={1}>1</option>
+          <option value={1}>{page.page}</option>
         </select>
         <span>of</span>
-        <span className="ml-1">1</span>
+        <span className="ml-1">{page.total_pages}</span>
       </div>
       <div className="flex items-center">
         <button
@@ -42,7 +42,7 @@ export default function Pagination({ result }: Props) {
       </div>
       <div className="flex items-center space-x-2">
         <select
-          defaultValue={25}
+          defaultValue={page.page_size}
           className="cursor-pointer hover:bg-white/10 rounded-full px-2 py-1 text-center select-ghost appearance-none focus:bg-white/10"
         >
           <option value={10}>10</option>

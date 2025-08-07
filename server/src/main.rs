@@ -207,7 +207,10 @@ struct QueryParams {
 async fn handle_query(
     Data(state): Data<&Arc<dbc::State>>,
     Json(params): Json<QueryParams>,
-) -> eyre::Result<Json<dbc::db::QueryResult>> {
+) -> eyre::Result<Json<dbc::db::PaginatedQueryResult>> {
     let conn = state.pool.get_conn().await?;
-    Ok(Json(dbc::db::query(&conn, &params.query, &[]).await?))
+    // FIXME: provide page/page_size from params
+    Ok(Json(
+        dbc::db::paginated_query(&conn, &params.query, &[], 1, 25).await?,
+    ))
 }

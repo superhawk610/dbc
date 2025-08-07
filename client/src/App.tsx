@@ -7,7 +7,7 @@ import Navbar from "./components/Navbar.tsx";
 import Editor, { EditorRef, LAST_QUERY } from "./components/Editor.tsx";
 import QueryResults from "./components/QueryResults.tsx";
 import Pagination from "./components/Pagination.tsx";
-import QueryRow, { QueryResult } from "./models/query.ts";
+import QueryRow, { PaginatedQueryResult } from "./models/query.ts";
 
 const EDITOR_HEIGHT = { min: 100, default: 400 };
 
@@ -17,7 +17,7 @@ function App() {
   const resizeHandleRef = useRef<HTMLDivElement>(null);
   const [showResults, setShowResults] = useState(false);
 
-  const [res, setRes] = useState<QueryResult | null>(null);
+  const [res, setRes] = useState<PaginatedQueryResult | null>(null);
   const [tables, setTables] = useState<QueryRow[] | null>(null);
   const [databases, setDatabases] = useState<QueryRow[] | null>(null);
   const [schemas, setSchemas] = useState<QueryRow[] | null>(null);
@@ -96,6 +96,9 @@ function App() {
           onClickLabel="Query ⌘⏎"
           sidebar={
             <div className="w-[300px] overflow-auto">
+              <h1 className="mb-0 px-4 divider divider-start text-xs text-base-content/80 uppercase">
+                tables
+              </h1>
               <ul className="menu w-full">
                 {!tables
                   ? (
@@ -136,7 +139,7 @@ function App() {
             <>
               <select
                 title="Connection"
-                className="select select-xs select-ghost m-2 w-[200px] focus:outline-primary"
+                className="select select-xs select-ghost w-[200px] focus:outline-primary"
               >
                 <option value="default">
                   default
@@ -146,7 +149,7 @@ function App() {
               <select
                 title="Database"
                 disabled={!databases}
-                className="select select-xs select-ghost m-2 w-[200px] focus:outline-primary"
+                className="select select-xs select-ghost w-[200px] focus:outline-primary"
               >
                 {databases?.map((row) => (
                   <option
@@ -161,7 +164,7 @@ function App() {
               <select
                 title="Schema"
                 disabled={!schemas}
-                className="select select-xs select-ghost m-2 w-[200px] focus:outline-primary"
+                className="select select-xs select-ghost w-[200px] focus:outline-primary"
               >
                 {schemas?.map((row) => (
                   <option
@@ -186,8 +189,8 @@ function App() {
 
           {!res ? <p className="mt-4 px-6 text-sm">No results.</p> : (
             <>
-              <QueryResults result={res} error={error} />
-              <Pagination result={res} />
+              <QueryResults page={res} error={error} />
+              <Pagination page={res} />
             </>
           )}
         </div>

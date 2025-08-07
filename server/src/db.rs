@@ -92,6 +92,22 @@ pub struct QueryResult {
     pub is_ddl: bool,
 }
 
+#[derive(Debug, Serialize)]
+pub struct PaginatedQueryResult {
+    /// 1-indexed page number.
+    pub page: usize,
+    /// The number of rows included in a single page.
+    pub page_size: usize,
+    /// The number of rows contained in the current page.
+    pub page_count: usize,
+    /// The total number of rows available across all pages.
+    pub total_count: usize,
+    /// The total number of pages.
+    pub total_pages: usize,
+    /// The current page.
+    pub entries: QueryResult,
+}
+
 pub type QueryRows = Vec<HashMap<String, serde_json::Value>>;
 
 impl QueryResult {
@@ -203,6 +219,40 @@ pub async fn table_ddl(client: &tokio_postgres::Client, table_name: &str) -> eyr
         table_name,
         column_defs.join(",\n  ")
     ))
+}
+
+pub async fn paginated_query(
+    client: &tokio_postgres::Client,
+    raw_query: &str,
+    params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
+    page: usize,
+    page_size: usize,
+) -> eyre::Result<PaginatedQueryResult> {
+    let base_query = parse_query(raw_query);
+    let count_query = format!("SELECT COUNT(*) FROM (\n{base_query}\n);");
+
+    let limit = page_size;
+    let offset = (page - 1) * page_size;
+    let page_query = format!("SELECT * FROM (\n{base_query}\n) LIMIT {limit} OFFSET {offset};");
+
+    let (result, count_result) = futures_util::future::try_join(
+        query(client, &page_query, params),
+        query(client, &count_query, params),
+    )
+    .await?;
+
+    let page_count = result.rows.len();
+    let total_count = count_result.rows[0][0].as_u64().unwrap() as usize;
+    let total_pages = total_count.div_ceil(page_size);
+
+    Ok(PaginatedQueryResult {
+        page,
+        page_size,
+        page_count,
+        total_count,
+        total_pages,
+        entries: result,
+    })
 }
 
 pub async fn query(
