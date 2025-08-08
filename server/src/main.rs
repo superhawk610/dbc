@@ -94,7 +94,7 @@ async fn main() -> eyre::Result<()> {
             Route::new()
                 .at("/databases", get(get_databases))
                 .at("/schemas", get(get_schemas))
-                .at("/tables", get(get_tables))
+                .at("/schemas/:schema/tables", get(get_tables))
                 .at("/ddl/table/:table_name", get(get_table_ddl)),
         )
         .at("/config", get(get_config).put(update_config))
@@ -183,9 +183,12 @@ async fn get_schemas(
 }
 
 #[poem::handler]
-async fn get_tables(Data(state): Data<&Arc<dbc::State>>) -> eyre::Result<Json<dbc::db::QueryRows>> {
+async fn get_tables(
+    Data(state): Data<&Arc<dbc::State>>,
+    Path(schema): Path<String>,
+) -> eyre::Result<Json<dbc::db::QueryRows>> {
     let conn = state.pool.get_conn().await?;
-    Ok(Json(dbc::db::list_tables(&conn).await?.row_maps()))
+    Ok(Json(dbc::db::list_tables(&conn, &schema).await?.row_maps()))
 }
 
 #[poem::handler]

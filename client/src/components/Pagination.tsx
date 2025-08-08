@@ -1,4 +1,6 @@
 import {
+  HiChevronDoubleLeft as FirstIcon,
+  HiChevronDoubleRight as LastIcon,
   HiChevronLeft as LeftIcon,
   HiChevronRight as RightIcon,
 } from "react-icons/hi";
@@ -40,15 +42,39 @@ export default function Pagination(
       <div className="flex items-center">
         <button
           type="button"
-          className="flex items-center justify-center cursor-pointer w-6 h-6 rounded-full hover:bg-white/10 active:bg-white/20"
+          className="flex items-center justify-center cursor-pointer w-6 h-6 rounded-full
+          hover:bg-white/10 active:bg-white/20 disabled:opacity-50 disabled:pointer-events-none"
+          onClick={() => setPage(1)}
+          disabled={page === 1}
+        >
+          <FirstIcon />
+        </button>
+        <button
+          type="button"
+          className="flex items-center justify-center cursor-pointer w-6 h-6 rounded-full
+          hover:bg-white/10 active:bg-white/20 disabled:opacity-50 disabled:pointer-events-none"
+          onClick={() => setPage(page - 1)}
+          disabled={page === 1}
         >
           <LeftIcon />
         </button>
         <button
           type="button"
-          className="flex items-center justify-center cursor-pointer w-6 h-6 rounded-full hover:bg-white/10 active:bg-white/20"
+          className="flex items-center justify-center cursor-pointer w-6 h-6 rounded-full
+          hover:bg-white/10 active:bg-white/20 disabled:opacity-50 disabled:pointer-events-none"
+          onClick={() => setPage(page + 1)}
+          disabled={page === query.total_pages}
         >
           <RightIcon />
+        </button>
+        <button
+          type="button"
+          className="flex items-center justify-center cursor-pointer w-6 h-6 rounded-full
+          hover:bg-white/10 active:bg-white/20 disabled:opacity-50 disabled:pointer-events-none"
+          onClick={() => setPage(query.total_pages)}
+          disabled={page === query.total_pages}
+        >
+          <LastIcon />
         </button>
       </div>
       <div className="flex items-center space-x-2">

@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { HiViewList as ListIcon } from "react-icons/hi";
+import {
+  HiDatabase as SchemaTabIcon,
+  HiDocumentAdd as NewTabIcon,
+  HiViewList as ListIcon,
+} from "react-icons/hi";
 import { get, post } from "./api.ts";
 
 import useResize from "./hooks/useResize.tsx";
@@ -10,6 +14,15 @@ import Pagination from "./components/Pagination.tsx";
 import QueryRow, { PaginatedQueryResult } from "./models/query.ts";
 
 const EDITOR_HEIGHT = { min: 100, default: 400 };
+
+// FIXME: do new tab creation IDs better
+let n = 1;
+
+interface LastQuery {
+  query: string;
+  page: number;
+  pageSize: number;
+}
 
 function App() {
   const editorRef = useRef<EditorRef>(null);
@@ -26,6 +39,8 @@ function App() {
   // TODO: prefetch more than the current page
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [query, setQuery] = useState<string | null>(null);
+  const queryRef = useRef({} as LastQuery);
 
   // TODO: switch between multiple connections
   useEffect(() => {
@@ -33,7 +48,7 @@ function App() {
       const [databases, schemas, tables] = await Promise.all([
         get("/db/databases"),
         get("/db/schemas"),
-        get("/db/tables"),
+        get("/db/schemas/information_schema/tables"),
       ]);
 
       setDatabases(databases);
@@ -50,13 +65,7 @@ function App() {
     defaultHeight: EDITOR_HEIGHT.default,
   });
 
-  async function dispatchQuery() {
-    const contents = editorRef.current!.getContents();
-    const query = editorRef.current!.getActiveQuery() || contents;
-
-    // store the query in local storage to be restored on page reload
-    globalThis.localStorage.setItem(LAST_QUERY, contents);
-
+  async function dispatchQuery(query: string, page: number, pageSize: number) {
     // show results pane
     setShowResults(true);
 
@@ -77,9 +86,41 @@ function App() {
     }
   }
 
+  useEffect(() => {
+    // if there's no query, do nothing
+    if (!query) return;
+
+    // if nothing has changed, do nothing
+    if (
+      queryRef.current.query === query &&
+      queryRef.current.page === page &&
+      queryRef.current.pageSize === pageSize
+    ) {
+      return;
+    }
+
+    queryRef.current = { query, page, pageSize };
+    dispatchQuery(query, page, pageSize);
+  }, [query, page, pageSize]);
+
   return (
     <div className="flex flex-col items-stretch w-screen h-screen">
       <Navbar>
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={() => {
+            n += 1;
+            editorRef.current!.openTab({
+              id: `dbc://query/${n}`,
+              name: `Query / Script ${n}`,
+              language: "sql",
+              contents: "",
+            });
+          }}
+        >
+          <NewTabIcon /> New Tab
+        </button>
         <button
           type="button"
           className={`btn btn-sm ${showResults && "btn-primary"}`}
@@ -95,7 +136,14 @@ function App() {
       >
         <Editor
           ref={editorRef}
-          onClick={dispatchQuery}
+          onClick={() => {
+            const contents = editorRef.current!.getContents();
+
+            // store the query in local storage to be restored on page reload
+            globalThis.localStorage.setItem(LAST_QUERY, contents);
+
+            setQuery(editorRef.current!.getActiveQuery() || contents);
+          }}
           onClickLabel="Query ⌘⏎"
           sidebar={
             <div className="w-[300px] overflow-auto">
@@ -128,6 +176,7 @@ function App() {
                             name: `Table / ${row["table_name"]}`,
                             language: "sql",
                             contents: res.ddl,
+                            icon: <SchemaTabIcon />,
                           });
                         }}
                       >

@@ -7,7 +7,7 @@ import React, {
 } from "react";
 import { Editor as MonacoEditor, loader, Monaco } from "@monaco-editor/react";
 import { editor as editorNS, Position, Range, Uri } from "monaco-editor";
-import { HiX as XIcon } from "react-icons/hi";
+import { HiDocumentText as TabIcon, HiX as XIcon } from "react-icons/hi";
 
 export const LAST_QUERY = "lastQuery";
 
@@ -19,8 +19,8 @@ const DEFAULT_THEMES = {
 };
 
 const DEFAULT_TAB: EditorTab = {
-  id: "dbc://_blank",
-  name: "Script",
+  id: "dbc://query/1",
+  name: "Query / Script 1",
   language: "sql",
   contents: globalThis.localStorage.getItem(LAST_QUERY) ||
     "-- enter query here\n",
@@ -159,6 +159,7 @@ export interface EditorTab {
   name: string;
   language: string;
   contents: string;
+  icon?: React.ReactNode | null;
 }
 
 export interface EditorRef {
@@ -299,8 +300,8 @@ export default forwardRef(
                       role="button"
                       key={idx}
                       className={`
-                      flex justify-between px-3 py-1 w-48 text-sm text-left text-ellipsis
-                      cursor-pointer border-r border-base-content/10 rounded-t-lg
+                      flex items-center px-3 py-1.5 text-xs cursor-pointer
+                      border-r border-base-content/10
                     ${
                         idx === activeTabIndex
                           ? "bg-primary text-primary-content hover:bg-primary/90"
@@ -308,7 +309,10 @@ export default forwardRef(
                       }`}
                       onClick={() => setActiveTabIndex(idx)}
                     >
-                      <span>
+                      <div className="mr-1">
+                        {tab.icon || <TabIcon />}
+                      </div>
+                      <span className="min-w-32 max-w-56 mr-2 overflow-hidden whitespace-nowrap text-ellipsis">
                         {prefix && (
                           <span className="opacity-40 pr-1">{prefix}</span>
                         )}
@@ -316,7 +320,7 @@ export default forwardRef(
                       </span>
                       <button
                         type="button"
-                        className={`cursor-pointer px-1 -mr-1 ${
+                        className={`cursor-pointer px-1 ml-auto -mr-1 ${
                           idx === activeTabIndex
                             ? "text-primary-content/60"
                             : "text-base-content/60"

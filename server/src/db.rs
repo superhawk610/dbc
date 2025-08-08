@@ -135,14 +135,17 @@ pub struct QueryResultColumn {
 // TODO: probably need to optimize this per-database to filter out things
 // like system tables, partitions, etc.
 // see: https://stackoverflow.com/a/58243669/885098
-pub async fn list_tables(client: &tokio_postgres::Client) -> eyre::Result<QueryResult> {
+pub async fn list_tables(
+    client: &tokio_postgres::Client,
+    schema: &str,
+) -> eyre::Result<QueryResult> {
     let sql = "
     SELECT *
     FROM information_schema.tables
     WHERE table_schema = $1
     AND table_type = 'BASE TABLE'
     ORDER BY table_name";
-    query(client, sql, &[&"public"]).await
+    query(client, sql, &[&schema]).await
 }
 
 pub async fn list_schemas(client: &tokio_postgres::Client) -> eyre::Result<QueryResult> {
@@ -228,6 +231,7 @@ pub async fn paginated_query(
     page: usize,
     page_size: usize,
 ) -> eyre::Result<PaginatedQueryResult> {
+    // TODO: indent subquery
     let base_query = parse_query(raw_query);
     let count_query = format!("SELECT COUNT(*) FROM (\n{base_query}\n);");
 
