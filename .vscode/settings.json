@@ -10,5 +10,6 @@
   },
   "[rust]": {
     "editor.tabSize": 4
-  }
+  },
+  "rust-analyzer.cargo.features": ["bundle"]
 }

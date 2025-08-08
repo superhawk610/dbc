@@ -104,14 +104,59 @@ async fn main() -> eyre::Result<()> {
         .around(format_eyre)
         .data(state);
 
-    Server::new(TcpListener::bind(&format!(
+    let server_addr = format!(
         "127.0.0.1:{}",
         std::env::var("API_PORT").expect("API_PORT is set")
-    )))
-    .run(router)
-    .await?;
+    );
 
-    Ok(())
+    let _server_handle = tokio::spawn(async move {
+        Server::new(TcpListener::bind(&server_addr))
+            .run(router)
+            .await
+            .unwrap();
+    });
+
+    #[cfg(feature = "bundle")]
+    {
+        use tao::{
+            dpi::LogicalSize,
+            event::{Event, WindowEvent},
+            event_loop::{ControlFlow, EventLoop},
+            window::WindowBuilder,
+        };
+        use wry::WebViewBuilder;
+
+        let event_loop = EventLoop::new();
+        let window = WindowBuilder::new()
+            .with_title("dbc")
+            .with_inner_size(LogicalSize::new(1100, 700))
+            .build(&event_loop)
+            .unwrap();
+
+        // TODO: build assets with cargo script, host on ephemeral port
+        let _webview = WebViewBuilder::new()
+            .with_url("http://localhost:5173")
+            .build(&window)
+            .unwrap();
+
+        event_loop.run(move |event, _, control_flow| {
+            *control_flow = ControlFlow::Wait;
+
+            if let Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } = event
+            {
+                *control_flow = ControlFlow::Exit;
+            }
+        });
+    }
+
+    #[cfg(not(feature = "bundle"))]
+    {
+        _server_handle.await.unwrap();
+        Ok(())
+    }
 }
 
 #[poem::handler]
