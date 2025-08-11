@@ -9,9 +9,17 @@ import { get, post } from "./api.ts";
 import useResize from "./hooks/useResize.tsx";
 import Navbar from "./components/Navbar.tsx";
 import Editor, { EditorRef, LAST_QUERY } from "./components/Editor.tsx";
+import ConnectionSelect from "./components/editor/ConnectionSelect.tsx";
+import DatabaseSelect from "./components/editor/DatabaseSelect.tsx";
+import SchemaSelect from "./components/editor/SchemaSelect.tsx";
 import QueryResults from "./components/QueryResults.tsx";
 import Pagination from "./components/Pagination.tsx";
-import QueryRow, { PaginatedQueryResult } from "./models/query.ts";
+import Connection from "./models/connection.ts";
+import { PaginatedQueryResult } from "./models/query.ts";
+import Database from "./models/database.ts";
+import Schema from "./models/schema.ts";
+import Table from "./models/table.ts";
+import SettingsModal from "./components/SettingsModal.tsx";
 
 const EDITOR_HEIGHT = { min: 100, default: 400 };
 
@@ -29,12 +37,22 @@ function App() {
   const resizeRef = useRef<HTMLDivElement>(null);
   const resizeHandleRef = useRef<HTMLDivElement>(null);
   const [showResults, setShowResults] = useState(false);
+  const [settingsModalActive, setSettingsModalsActive] = useState(false);
 
   const [res, setRes] = useState<PaginatedQueryResult | null>(null);
-  const [tables, setTables] = useState<QueryRow[] | null>(null);
-  const [databases, setDatabases] = useState<QueryRow[] | null>(null);
-  const [schemas, setSchemas] = useState<QueryRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // FIXME: read from server
+  const [connections, setConnections] = useState([
+    { name: "default" } as Connection,
+  ]);
+  const [connection, setConnection] = useState("default");
+
+  const [databases, setDatabases] = useState<Database[] | null>(null);
+  const [database, setDatabase] = useState<string | null>(null);
+  const [schemas, setSchemas] = useState<Schema[] | null>(null);
+  const [schema, setSchema] = useState<string | null>(null);
+  const [tables, setTables] = useState<Table[] | null>(null);
 
   // TODO: prefetch more than the current page
   const [page, setPage] = useState(1);
@@ -45,17 +63,28 @@ function App() {
   // TODO: switch between multiple connections
   useEffect(() => {
     (async () => {
-      const [databases, schemas, tables] = await Promise.all([
-        get("/db/databases"),
-        get("/db/schemas"),
-        get("/db/schemas/information_schema/tables"),
+      const [databases, schemas] = await Promise.all([
+        get<Database[]>("/db/databases"),
+        get<Schema[]>("/db/schemas"),
       ]);
 
       setDatabases(databases);
       setSchemas(schemas);
-      setTables(tables);
+
+      // select first available database by default
+      if (databases.length > 0) setDatabase(databases[0].datname);
+
+      // select first available schema by default
+      if (schemas.length > 0) setSchema(schemas[0].schema_name);
     })();
   }, []);
+
+  useEffect(() => {
+    (async () => {
+      const tables = await get<Table[]>(`/db/schemas/${schema}/tables`);
+      setTables(tables);
+    })();
+  }, [schema]);
 
   useResize({
     active: showResults,
@@ -105,7 +134,7 @@ function App() {
 
   return (
     <div className="flex flex-col items-stretch w-screen h-screen">
-      <Navbar>
+      <Navbar onSaveSettings={setConnections}>
         <button
           type="button"
           className="btn btn-sm"
@@ -189,48 +218,38 @@ function App() {
           }
           toolbar={
             <>
-              <select
-                title="Connection"
-                className="select select-xs select-ghost shrink basis-[200px] focus:outline-primary"
-              >
-                <option value="default">
-                  default
-                </option>
-              </select>
-
-              <select
-                title="Database"
-                disabled={!databases}
-                className="select select-xs select-ghost shrink basis-[200px] focus:outline-primary"
-              >
-                {databases?.map((row) => (
-                  <option
-                    key={row["datname"] as string}
-                    value={row["datname"] as string}
-                  >
-                    {row["datname"]}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                title="Schema"
-                disabled={!schemas}
-                className="select select-xs select-ghost shrink basis-[200px] focus:outline-primary"
-              >
-                {schemas?.map((row) => (
-                  <option
-                    key={row["schema_name"] as string}
-                    value={row["schema_name"] as string}
-                  >
-                    {row["schema_name"]}
-                  </option>
-                ))}
-              </select>
+              {connections && (
+                <ConnectionSelect
+                  connections={connections}
+                  selected={connection}
+                  onSelect={setConnection}
+                  onManageConnections={() => setSettingsModalsActive(true)}
+                />
+              )}
+              {databases && (
+                <DatabaseSelect
+                  databases={databases}
+                  selected={database}
+                  onSelect={setDatabase}
+                />
+              )}
+              {schemas && (
+                <SchemaSelect
+                  schemas={schemas}
+                  selected={schema}
+                  onSelect={setSchema}
+                />
+              )}
             </>
           }
         />
       </div>
+
+      <SettingsModal
+        active={settingsModalActive}
+        onClose={() => setSettingsModalsActive(false)}
+        onSave={setConnections}
+      />
 
       {showResults && (
         <div className="flex-1 flex flex-col bg-base-300 overflow-y-auto">

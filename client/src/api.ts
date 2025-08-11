@@ -4,7 +4,7 @@ const socketUrl = `ws://${import.meta.env.VITE_API_BASE}`;
 const NO_CONTENT = 204;
 
 const req = (method: string) => {
-  return async (path: string, data?: Record<string, unknown>) => {
+  return async <T>(path: string, data?: object) => {
     const response = await fetch(`${baseUrl}${path}`, {
       mode: "cors",
       method,

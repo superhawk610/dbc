@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { DivProps } from "react-html-props";
 
 export interface ModalActions {
@@ -30,36 +30,59 @@ function ModalActions({ children, className, ...props }: DivProps) {
   );
 }
 
-export interface Props {
-  buttonText: React.ReactNode;
+export interface ModalControlProps {
+  // direct control
+  active?: boolean;
+  onClose?: () => void;
+}
+
+export interface Props extends ModalControlProps {
   heading: string;
   actions?: React.ReactNode;
   children: (actions: ModalActions) => React.ReactNode;
+
+  // managed control
+  buttonText: React.ReactNode;
 }
 
-function Modal({ buttonText, heading, children }: Props) {
-  const [showBody, setShowBody] = useState(false);
+function Modal({ buttonText, heading, children, active, onClose }: Props) {
+  const [showBody, setShowBody] = useState(active ?? false);
   const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    if (active) setShowBody(true);
+  }, [active]);
+
+  useLayoutEffect(() => {
+    if (active) dialogRef.current!.showModal();
+  }, [active]);
 
   return (
     <>
-      <button
-        type="button"
-        className="btn btn-sm"
-        onClick={() => {
-          setShowBody(true);
+      {typeof active === "undefined" && (
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={() => {
+            setShowBody(true);
 
-          // try to let body render before showing
-          setTimeout(() => dialogRef.current!.showModal(), 0);
-        }}
-      >
-        {buttonText}
-      </button>
+            // try to let body render before showing
+            setTimeout(() => dialogRef.current!.showModal(), 0);
+          }}
+        >
+          {buttonText}
+        </button>
+      )}
 
       <dialog ref={dialogRef} className="modal">
         <div className="modal-box">
           <h3 className="font-bold text-lg">{heading}</h3>
-          {showBody && children({ close: () => setShowBody(false) })}
+          {showBody && children({
+            close: () => {
+              setShowBody(false);
+              onClose?.();
+            },
+          })}
         </div>
       </dialog>
     </>
