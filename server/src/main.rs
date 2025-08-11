@@ -1,7 +1,7 @@
 use futures_util::{SinkExt, StreamExt};
 use poem::{
     EndpointExt, IntoResponse, Route, Server, get,
-    listener::TcpListener,
+    listener::{Acceptor, Listener, TcpAcceptor, TcpListener},
     post,
     web::{
         Data, Json, Path,
@@ -104,13 +104,21 @@ async fn main() -> eyre::Result<()> {
         .around(format_eyre)
         .data(state);
 
-    let server_addr = format!(
-        "127.0.0.1:{}",
-        std::env::var("API_PORT").expect("API_PORT is set")
-    );
+    // when bundled, have the system assign us a port
+    let server_port = if cfg!(feature = "bundle") {
+        0
+    } else {
+        std::env::var("API_PORT")
+            .expect("API_PORT is set")
+            .parse::<usize>()
+            .expect("API_PORT is valid")
+    };
+
+    let server_addr = format!("127.0.0.1:{server_port}");
+    let (acceptor, server_port) = bind_acceptor(&server_addr).await;
 
     let _server_handle = tokio::spawn(async move {
-        Server::new(TcpListener::bind(&server_addr))
+        Server::new_with_acceptor(acceptor)
             .run(router)
             .await
             .unwrap();
@@ -124,7 +132,34 @@ async fn main() -> eyre::Result<()> {
             event_loop::{ControlFlow, EventLoop},
             window::WindowBuilder,
         };
+        use tokio::process::Command;
         use wry::WebViewBuilder;
+
+        // build frontend bundle
+        let asset_dir = std::env::temp_dir().join("dbc");
+        tokio::fs::remove_dir_all(&asset_dir).await.unwrap();
+
+        Command::new("deno")
+            .current_dir("../client")
+            .args(&["task", "build", "--outDir", asset_dir.to_str().unwrap()])
+            .env("VITE_API_BASE", format!("localhost:{}", server_port))
+            .spawn()
+            .unwrap()
+            .wait()
+            .await
+            .unwrap();
+
+        // serve frontend bundle
+        let (acceptor, asset_port) = bind_acceptor("127.0.0.1:0").await;
+
+        tokio::spawn(async move {
+            let router =
+                poem::endpoint::StaticFilesEndpoint::new(&asset_dir).index_file("index.html");
+            Server::new_with_acceptor(acceptor)
+                .run(router)
+                .await
+                .unwrap();
+        });
 
         let event_loop = EventLoop::new();
         let window = WindowBuilder::new()
@@ -133,9 +168,8 @@ async fn main() -> eyre::Result<()> {
             .build(&event_loop)
             .unwrap();
 
-        // TODO: build assets with cargo script, host on ephemeral port
         let _webview = WebViewBuilder::new()
-            .with_url("http://localhost:5173")
+            .with_url(format!("http://localhost:{asset_port}"))
             .build(&window)
             .unwrap();
 
@@ -157,6 +191,15 @@ async fn main() -> eyre::Result<()> {
         _server_handle.await.unwrap();
         Ok(())
     }
+}
+
+async fn bind_acceptor(addr: &str) -> (TcpAcceptor, u16) {
+    let acceptor = TcpListener::bind(addr)
+        .into_acceptor()
+        .await
+        .expect("valid server host/port");
+    let server_port = acceptor.local_addr()[0].as_socket_addr().unwrap().port();
+    (acceptor, server_port)
 }
 
 #[poem::handler]
