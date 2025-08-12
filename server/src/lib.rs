@@ -52,6 +52,18 @@ impl State {
 
         entry.get().get_conn().await
     }
+
+    pub async fn debug(&self) -> String {
+        let pools = self.pools.read().await;
+        let mut counts = Vec::new();
+        for (conn, pool) in pools.iter() {
+            counts.push(format!(
+                "=== connection: \"{conn}\" ===\n{}",
+                pool.debug().await
+            ));
+        }
+        counts.join("\n")
+    }
 }
 
 pub fn config_dir() -> &'static Path {
