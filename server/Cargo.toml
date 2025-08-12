@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-bundle = ["dep:tao", "dep:wry", "poem/static-files"]
+bundle = ["dep:tao", "dep:wry", "dep:muda", "poem/static-files"]
 
 [dependencies]
 aes-gcm = "0.10.3"
@@ -18,6 +18,7 @@ poem = { version = "3.1.8", features = ["eyre06", "websocket"] }
 postgres-native-tls = "0.5.1"
 serde = "1.0.219"
 serde_json = "1.0.140"
+shellexpand = "3.1.1"
 time = { version = "0.3.41", features = ["formatting"] }
 tokio = { version = "1.44.1", features = ["full"] }
 tokio-postgres = { version = "0.7.13", features = [
@@ -27,5 +28,6 @@ tokio-postgres = { version = "0.7.13", features = [
 toml = "0.8.22"
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
+muda = { version = "0.17.1", optional = true }
 tao = { version = "0.34.0", optional = true }
 wry = { version = "0.52.1", optional = true }
