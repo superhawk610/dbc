@@ -8,7 +8,11 @@ const req = (method: string) => {
     const response = await fetch(`${baseUrl}${path}`, {
       mode: "cors",
       method,
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        // FIXME: select connection when issuing query
+        "x-conn-name": "default",
+      },
       body: JSON.stringify(data),
     });
 

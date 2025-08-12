@@ -17,7 +17,7 @@ pub struct Config {
     pub database: String,
     #[builder(default)]
     pub ssl: bool,
-    #[builder(default = 10)]
+    #[builder(default = 5)]
     pub pool_size: usize,
     #[builder(default = 30)]
     pub pool_timeout_s: u64,
@@ -36,7 +36,6 @@ impl Config {
     }
 }
 
-// TODO: register into connection pool
 pub fn spawn_conn<T>(conn: tokio_postgres::Connection<Socket, T>, tx: Sender<()>)
 where
     T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -231,8 +230,11 @@ pub async fn paginated_query(
     page: usize,
     page_size: usize,
 ) -> eyre::Result<PaginatedQueryResult> {
-    // TODO: indent subquery
-    let base_query = parse_query(raw_query);
+    fn indent(s: &str) -> String {
+        format!("  {}", s.replace('\n', "\n  "))
+    }
+
+    let base_query = indent(&parse_query(raw_query));
     let count_query = format!("SELECT COUNT(*) FROM (\n{base_query}\n);");
 
     let limit = page_size;

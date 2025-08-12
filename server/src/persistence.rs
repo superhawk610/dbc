@@ -40,7 +40,7 @@ pub struct Store {
     pub connections: Vec<Connection>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Connection {
     pub name: String,
     pub host: String,
@@ -48,6 +48,8 @@ pub struct Connection {
     pub username: String,
     pub password: EncryptedString,
     pub database: String,
+    #[serde(default)]
+    pub ssl: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -58,6 +60,7 @@ pub struct DecryptedConnection {
     pub username: String,
     pub password: String,
     pub database: String,
+    pub ssl: bool,
 }
 
 impl From<&Connection> for DecryptedConnection {
@@ -69,7 +72,21 @@ impl From<&Connection> for DecryptedConnection {
             username: conn.username.clone(),
             password: conn.password.0.clone(),
             database: conn.database.clone(),
+            ssl: conn.ssl,
         }
+    }
+}
+
+impl From<&Connection> for crate::db::Config {
+    fn from(conn: &Connection) -> Self {
+        crate::db::Config::builder()
+            .host(conn.host.clone())
+            .port(conn.port)
+            .username(conn.username.clone())
+            .password(conn.password.0.clone())
+            .database(conn.database.clone())
+            .ssl(conn.ssl)
+            .build()
     }
 }
 
@@ -93,7 +110,7 @@ impl Store {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EncryptedString(String);
 
 impl EncryptedString {

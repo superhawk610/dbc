@@ -21,7 +21,7 @@ export default function Pagination(
   const firstRow = (query.page - 1) * query.page_size + 1;
   const lastRow = firstRow + query.page_size - 1;
   return (
-    <div className="flex items-center space-x-2 p-4 text-sm bg-neutral/20 text-base-content/80">
+    <div className="flex items-center space-x-2 px-4 py-2 text-sm bg-neutral/20 text-base-content/80">
       <div className="mr-auto">
         Showing {firstRow} - {lastRow} of {query.total_count} rows
       </div>

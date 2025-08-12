@@ -1,37 +1,30 @@
-use futures_util::{SinkExt, StreamExt};
-use poem::{
-    EndpointExt, IntoResponse, Route, Server, get,
-    listener::{Acceptor, Listener, TcpAcceptor, TcpListener},
-    post,
-    web::{
-        Data, Json, Path,
-        websocket::{Message, WebSocket},
-    },
-};
-use serde::Deserialize;
-use std::sync::{Arc, RwLock};
-use tokio::sync::Mutex;
+use poem::{EndpointExt, Route, Server, get, post};
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::{Mutex, RwLock};
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
+    // load environment variables
     dotenv::dotenv().ok();
 
-    // start up stream worker
-    let worker = dbc::stream::StreamWorker::new();
-
-    if let Err(err) =
-        dbc::persistence::load_encryption_key(std::env::var("ENCRYPTION_KEY").ok().as_deref())
-    {
-        println!("{}", err);
-        std::process::exit(1);
-    };
-
+    // initialize logger
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::DEBUG)
         .with_test_writer()
         .init();
 
-    let mut store = dbg!(dbc::persistence::Store::load().unwrap());
+    // start up stream worker
+    let worker = dbc::stream::StreamWorker::new();
+
+    // load encryption key
+    let encryption_key = std::env::var("ENCRYPTION_KEY").ok();
+    if let Err(err) = dbc::persistence::load_encryption_key(encryption_key.as_deref()) {
+        println!("{}", err);
+        std::process::exit(1);
+    };
+
+    // initialize store and load default connection if none are present
+    let mut store = dbc::persistence::Store::load().unwrap();
     if store.connections.is_empty() {
         let db_host = std::env::var("DB_HOST").expect("DB_HOST is set");
         let db_port = std::env::var("DB_PORT")
@@ -49,59 +42,38 @@ async fn main() -> eyre::Result<()> {
             username: db_user,
             password: dbc::persistence::EncryptedString::new(db_pass),
             database: db_database,
+            ssl: false,
         };
 
         store.connections.push(connection);
         store.persist().unwrap();
     }
 
-    let connection = &store.connections[0];
-    let cfg = dbc::db::Config::builder()
-        .host(connection.host.clone())
-        .port(connection.port)
-        .username(connection.username.clone())
-        .password(connection.password.clone())
-        .database(connection.database.clone())
-        .build();
-
-    let pool = dbc::pool::ConnectionPool::new(cfg).await;
-
     let state = Arc::new(dbc::State {
-        pool,
+        pools: RwLock::new(HashMap::new()),
         config: RwLock::new(store),
         worker: Mutex::new(worker),
     });
 
-    async fn format_eyre<E: poem::Endpoint>(
-        next: E,
-        req: poem::Request,
-    ) -> poem::Result<poem::Response> {
-        use poem::IntoResponse;
-        let mut res = next.call(req).await?.into_response();
-
-        // eyre errors are converted to text, but the content-type header isn't set
-        if res.content_type().is_none() {
-            res = res.set_content_type("text/plain");
-        }
-
-        Ok(res)
-    }
-
+    use dbc::server::routes;
     let router = Route::new()
-        .at("/:channel", get(websocket))
+        .at("/:channel", get(routes::websocket))
         .nest(
             "/db",
             Route::new()
-                .at("/databases", get(get_databases))
-                .at("/schemas", get(get_schemas))
-                .at("/schemas/:schema/tables", get(get_tables))
-                .at("/ddl/table/:table_name", get(get_table_ddl)),
+                .at("/databases", get(routes::get_databases))
+                .at("/schemas", get(routes::get_schemas))
+                .at("/schemas/:schema/tables", get(routes::get_tables))
+                .at("/ddl/table/:table_name", get(routes::get_table_ddl)),
         )
-        .at("/config", get(get_config).put(update_config))
-        .at("/query", post(handle_query))
+        .at(
+            "/config",
+            get(routes::get_config).put(routes::update_config),
+        )
+        .at("/query", post(routes::handle_query))
         .with(poem::middleware::Cors::new())
         .with(poem::middleware::Tracing)
-        .around(format_eyre)
+        .around(routes::format_eyre)
         .data(state);
 
     // when bundled, have the system assign us a port
@@ -115,7 +87,7 @@ async fn main() -> eyre::Result<()> {
     };
 
     let server_addr = format!("127.0.0.1:{server_port}");
-    let (acceptor, server_port) = bind_acceptor(&server_addr).await;
+    let (acceptor, _server_port) = dbc::server::bind_acceptor(&server_addr).await;
 
     let _server_handle = tokio::spawn(async move {
         Server::new_with_acceptor(acceptor)
@@ -125,297 +97,11 @@ async fn main() -> eyre::Result<()> {
     });
 
     #[cfg(feature = "bundle")]
-    {
-        use poem::{endpoint::StaticFilesEndpoint, put};
-        use tao::{
-            dpi::LogicalSize,
-            event::{Event, WindowEvent},
-            event_loop::{ControlFlow, EventLoopBuilder},
-            window::WindowBuilder,
-        };
-        use tokio::process::Command;
-        use wry::WebViewBuilder;
-
-        // create app config directory
-        let config_dir = shellexpand::tilde("~/.config/dbc");
-        let config_dir = std::path::PathBuf::from(config_dir.as_ref());
-        if !config_dir.exists() {
-            tokio::fs::create_dir_all(&config_dir).await.unwrap();
-        }
-
-        // rehydrate localStorage, if it exists from a previous run
-        let local_storage_file = config_dir.join("localStorage.json");
-        let local_storage = if local_storage_file.exists() {
-            tokio::fs::read_to_string(&local_storage_file)
-                .await
-                .unwrap()
-        } else {
-            "{}".to_owned()
-        };
-
-        // build frontend bundle
-        let asset_dir = config_dir.join("build");
-        if asset_dir.exists() {
-            let _ = tokio::fs::remove_dir_all(&asset_dir).await;
-        }
-
-        Command::new("deno")
-            .current_dir("../client")
-            .args(&["task", "build", "--outDir", asset_dir.to_str().unwrap()])
-            .env("VITE_API_BASE", format!("localhost:{}", server_port))
-            .env("VITE_LOCAL_STORAGE", local_storage)
-            .env("NODE_ENV", "production")
-            .spawn()
-            .unwrap()
-            .wait()
-            .await
-            .unwrap();
-
-        // serve frontend bundle
-        let (acceptor, asset_port) = bind_acceptor("127.0.0.1:0").await;
-
-        #[poem::handler]
-        async fn update_local_storage(
-            Json(state): Json<serde_json::Value>,
-            Data(local_storage_file): Data<&std::path::PathBuf>,
-        ) -> poem::http::StatusCode {
-            tokio::fs::write(
-                &local_storage_file,
-                serde_json::to_string_pretty(&state).unwrap(),
-            )
-            .await
-            .unwrap();
-
-            poem::http::StatusCode::NO_CONTENT
-        }
-
-        tokio::spawn(async move {
-            let router = Route::new()
-                .at("/_wry/localStorage", put(update_local_storage))
-                .nest(
-                    "/",
-                    StaticFilesEndpoint::new(&asset_dir).index_file("index.html"),
-                )
-                .data(local_storage_file);
-
-            Server::new_with_acceptor(acceptor)
-                .run(router)
-                .await
-                .unwrap();
-        });
-
-        let _menu = if cfg!(target_os = "macos") {
-            use muda::{AboutMetadataBuilder, Menu, MenuItem, PredefinedMenuItem, Submenu};
-
-            let menu = Menu::with_items(&[
-                &Submenu::with_items(
-                    "App",
-                    true,
-                    &[
-                        &PredefinedMenuItem::about(
-                            Some("About dbc"),
-                            Some(
-                                AboutMetadataBuilder::new()
-                                    .name(Some("dbc"))
-                                    .version(Some(std::env::var("CARGO_PKG_VERSION").unwrap()))
-                                    .comments(Some("A database client."))
-                                    .copyright(Some("© 2025 Aaron Ross. All rights reserved."))
-                                    .build(),
-                            ),
-                        ),
-                        // &PredefinedMenuItem::separator(),
-                        // &PredefinedMenuItem::services(None),
-                        // &PredefinedMenuItem::separator(),
-                        // &PredefinedMenuItem::hide(None),
-                        // &PredefinedMenuItem::hide_others(None),
-                        // &PredefinedMenuItem::show_all(None),
-                        &PredefinedMenuItem::separator(),
-                        &PredefinedMenuItem::quit(None),
-                    ],
-                )
-                .unwrap(),
-                &Submenu::with_items(
-                    "Edit",
-                    true,
-                    &[
-                        &PredefinedMenuItem::undo(None),
-                        &PredefinedMenuItem::redo(None),
-                        &PredefinedMenuItem::separator(),
-                        &PredefinedMenuItem::cut(None),
-                        &PredefinedMenuItem::copy(None),
-                        &PredefinedMenuItem::paste(None),
-                        &PredefinedMenuItem::select_all(None),
-                    ],
-                )
-                .unwrap(),
-            ])
-            .unwrap();
-
-            menu.init_for_nsapp();
-
-            Some(menu)
-        } else {
-            None
-        };
-
-        #[derive(Debug)]
-        enum UserEvent {
-            MenuEvent(muda::MenuEvent),
-        }
-
-        let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
-
-        let proxy = event_loop.create_proxy();
-        muda::MenuEvent::set_event_handler(Some(move |event| {
-            proxy.send_event(UserEvent::MenuEvent(event)).unwrap();
-        }));
-
-        let window = WindowBuilder::new()
-            .with_title("dbc")
-            .with_inner_size(LogicalSize::new(1100, 700))
-            .build(&event_loop)
-            .unwrap();
-
-        let _webview = WebViewBuilder::new()
-            .with_url(format!("http://localhost:{asset_port}"))
-            .build(&window)
-            .unwrap();
-
-        event_loop.run(move |event, _, control_flow| {
-            *control_flow = ControlFlow::Wait;
-
-            match event {
-                Event::WindowEvent {
-                    event: WindowEvent::CloseRequested,
-                    ..
-                } => *control_flow = ControlFlow::Exit,
-
-                Event::UserEvent(UserEvent::MenuEvent(ev)) => {
-                    dbg!(&ev);
-                }
-
-                _ => {}
-            }
-        });
-    }
+    dbc::server::WebView::launch(_server_port).await;
 
     #[cfg(not(feature = "bundle"))]
     {
         _server_handle.await.unwrap();
         Ok(())
     }
-}
-
-async fn bind_acceptor(addr: &str) -> (TcpAcceptor, u16) {
-    let acceptor = TcpListener::bind(addr)
-        .into_acceptor()
-        .await
-        .expect("valid server host/port");
-    let server_port = acceptor.local_addr()[0].as_socket_addr().unwrap().port();
-    (acceptor, server_port)
-}
-
-#[poem::handler]
-async fn websocket(
-    ws: WebSocket,
-    Path(channel): Path<String>,
-    Data(state): Data<&Arc<dbc::State>>,
-) -> impl IntoResponse {
-    dbg!(channel);
-
-    let (tx, mut rx) = tokio::sync::mpsc::channel(100);
-    let mut worker = state.worker.lock().await;
-    worker.subscribe(tx).await.unwrap();
-
-    ws.on_upgrade(|mut socket| async move {
-        if let Some(Ok(Message::Text(text))) = socket.next().await {
-            dbg!(text);
-
-            let _ = socket.send(Message::Text("hello, world!".into())).await;
-        }
-
-        loop {
-            if let Some(line) = rx.recv().await {
-                match socket.send(Message::Text(line)).await {
-                    Err(_) => break,
-                    _ => {}
-                }
-            }
-        }
-    })
-}
-
-#[poem::handler]
-async fn get_config(Data(state): Data<&Arc<dbc::State>>) -> Json<serde_json::Value> {
-    let config = state.config.read().unwrap();
-    Json(serde_json::json!({
-        "connections": config.connections.iter().map(dbc::persistence::DecryptedConnection::from).collect::<Vec<_>>(),
-    }))
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct UpdateConfig {
-    pub connections: Vec<dbc::persistence::DecryptedConnection>,
-}
-
-#[poem::handler]
-async fn update_config(
-    Json(config): Json<UpdateConfig>,
-    Data(state): Data<&Arc<dbc::State>>,
-) -> poem::http::StatusCode {
-    dbg!(config);
-    poem::http::StatusCode::NO_CONTENT
-}
-
-#[poem::handler]
-async fn get_databases(
-    Data(state): Data<&Arc<dbc::State>>,
-) -> eyre::Result<Json<dbc::db::QueryRows>> {
-    let conn = state.pool.get_conn().await?;
-    Ok(Json(dbc::db::list_databases(&conn).await?.row_maps()))
-}
-
-#[poem::handler]
-async fn get_schemas(
-    Data(state): Data<&Arc<dbc::State>>,
-) -> eyre::Result<Json<dbc::db::QueryRows>> {
-    let conn = state.pool.get_conn().await?;
-    Ok(Json(dbc::db::list_schemas(&conn).await?.row_maps()))
-}
-
-#[poem::handler]
-async fn get_tables(
-    Data(state): Data<&Arc<dbc::State>>,
-    Path(schema): Path<String>,
-) -> eyre::Result<Json<dbc::db::QueryRows>> {
-    let conn = state.pool.get_conn().await?;
-    Ok(Json(dbc::db::list_tables(&conn, &schema).await?.row_maps()))
-}
-
-#[poem::handler]
-async fn get_table_ddl(
-    Data(state): Data<&Arc<dbc::State>>,
-    Path(table_name): Path<String>,
-) -> eyre::Result<Json<serde_json::Value>> {
-    let conn = state.pool.get_conn().await?;
-    let ddl = dbc::db::table_ddl(&conn, &table_name).await?;
-    Ok(Json(serde_json::json!({ "ddl": ddl })))
-}
-
-#[derive(Deserialize)]
-struct QueryParams {
-    pub query: String,
-    pub page: usize,
-    pub page_size: usize,
-}
-
-#[poem::handler]
-async fn handle_query(
-    Data(state): Data<&Arc<dbc::State>>,
-    Json(params): Json<QueryParams>,
-) -> eyre::Result<Json<dbc::db::PaginatedQueryResult>> {
-    let conn = state.pool.get_conn().await?;
-    Ok(Json(
-        dbc::db::paginated_query(&conn, &params.query, &[], params.page, params.page_size).await?,
-    ))
 }
