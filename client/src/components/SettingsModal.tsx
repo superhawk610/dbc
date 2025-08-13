@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import { HiOutlineCog as SettingsIcon } from "react-icons/hi";
-import Connection from "../models/connection.ts";
 import Modal, {
   closeModal,
   ModalActions,
@@ -9,10 +8,8 @@ import Modal, {
 import Fieldset from "./form/Fieldset.tsx";
 import Field from "./form/Field.tsx";
 import { get, put } from "../api.ts";
-
-interface Config {
-  connections: Connection[];
-}
+import Config from "../models/config.ts";
+import Connection from "../models/connection.ts";
 
 interface SettingsModalBodyProps {
   actions: ModalActions;
@@ -25,7 +22,7 @@ function SettingsModalBody({ actions, onSave }: SettingsModalBodyProps) {
 
   useEffect(() => {
     (async () => {
-      const res = await get("/config");
+      const res = await get<Config>("/config");
       setConfig(res);
     })();
   }, []);

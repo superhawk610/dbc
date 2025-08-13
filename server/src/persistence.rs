@@ -60,7 +60,22 @@ pub struct DecryptedConnection {
     pub username: String,
     pub password: String,
     pub database: String,
+    #[serde(default)]
     pub ssl: bool,
+}
+
+impl From<DecryptedConnection> for Connection {
+    fn from(conn: DecryptedConnection) -> Self {
+        Self {
+            name: conn.name,
+            host: conn.host,
+            port: conn.port,
+            username: conn.username,
+            password: EncryptedString(conn.password),
+            database: conn.database,
+            ssl: conn.ssl,
+        }
+    }
 }
 
 impl From<&Connection> for DecryptedConnection {
@@ -92,7 +107,7 @@ impl From<&Connection> for crate::db::Config {
 
 impl Store {
     pub fn load() -> eyre::Result<Self> {
-        match std::fs::read_to_string(STORE_FILE) {
+        match std::fs::read_to_string(crate::config_dir().join(STORE_FILE)) {
             Ok(toml_str) => Ok(toml::from_str(&toml_str)?),
             Err(_) => {
                 tracing::info!("could not find store, creating new...");
@@ -105,7 +120,7 @@ impl Store {
 
     pub fn persist(&self) -> eyre::Result<()> {
         let toml_str = toml::to_string_pretty(self)?;
-        std::fs::write(STORE_FILE, toml_str.as_bytes())?;
+        std::fs::write(crate::config_dir().join(STORE_FILE), toml_str.as_bytes())?;
         Ok(())
     }
 }

@@ -47,16 +47,16 @@ impl StreamWorker {
             }
         });
 
-        // FIXME: remove ticks
-        {
-            let tx = tx.clone();
-            tokio::spawn(async move {
-                for _ in 1..20 {
-                    let _ = tx.send(WorkerMessage::Broadcast("tick".to_owned())).await;
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                }
-            });
-        }
+        // send some sample messages to prove everything's working
+        // {
+        //     let tx = tx.clone();
+        //     tokio::spawn(async move {
+        //         for _ in 1..20 {
+        //             let _ = tx.send(WorkerMessage::Broadcast("tick".to_owned())).await;
+        //             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        //         }
+        //     });
+        // }
 
         Self { tx }
     }

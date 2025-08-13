@@ -12,6 +12,7 @@ export interface QueryColumn {
 export interface QueryResult {
   columns: QueryColumn[];
   rows: QueryValue[][];
+  is_ddl: boolean;
 }
 
 export interface PaginatedQueryResult {

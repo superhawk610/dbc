@@ -1,4 +1,4 @@
-use futures_util::{SinkExt, StreamExt};
+use futures_util::SinkExt;
 use poem::{
     IntoResponse,
     web::{
@@ -9,6 +9,8 @@ use poem::{
 };
 use serde::Deserialize;
 use std::{ops::Deref, sync::Arc};
+
+pub mod debug;
 
 pub async fn format_eyre<E: poem::Endpoint>(
     next: E,
@@ -75,11 +77,12 @@ pub async fn websocket(
     worker.subscribe(tx).await.unwrap();
 
     ws.on_upgrade(|mut socket| async move {
-        if let Some(Ok(Message::Text(text))) = socket.next().await {
-            dbg!(text);
+        // use futures_util::StreamExt;
+        // if let Some(Ok(Message::Text(text))) = socket.next().await {
+        //     dbg!(text);
 
-            let _ = socket.send(Message::Text("hello, world!".into())).await;
-        }
+        //     let _ = socket.send(Message::Text("hello, world!".into())).await;
+        // }
 
         loop {
             if let Some(line) = rx.recv().await {
@@ -107,10 +110,43 @@ struct UpdateConfig {
 
 #[poem::handler]
 pub async fn update_config(
-    Json(config): Json<UpdateConfig>,
+    Json(updated_config): Json<UpdateConfig>,
     Data(state): Data<&Arc<crate::State>>,
 ) -> poem::http::StatusCode {
-    dbg!(config);
+    let mut config = state.config.write().await;
+    config.connections = updated_config
+        .connections
+        .into_iter()
+        .map(crate::persistence::Connection::from)
+        .collect();
+    config.persist().unwrap();
+
+    // TODO: only changed connections should restart their pools
+    state
+        .broadcast("Settings updated, restarting active connections...")
+        .await;
+
+    let mut pools = state.pools.write().await;
+    let mut close_pools = Vec::new();
+    for (conn_name, pool) in pools.iter_mut() {
+        match config.connections.iter().find(|c| c.name.eq(conn_name)) {
+            // if the connection is still present in the config, reload the pool
+            Some(conn) => {
+                if let Err(err) = pool.reload(conn.into()).await {
+                    state.broadcast(err.to_string()).await;
+                }
+            }
+
+            // otherwise, slate for removal
+            None => close_pools.push(conn_name.to_string()),
+        }
+    }
+
+    // close any connection pools that are no longer active
+    pools.retain(|k, _| !close_pools.contains(&k));
+
+    state.broadcast("Done!").await;
+
     poem::http::StatusCode::NO_CONTENT
 }
 

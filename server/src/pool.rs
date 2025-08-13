@@ -33,10 +33,10 @@ impl Drop for CheckedOutConnection {
 
             // if this connection has terminated, we don't need to put it back into the pool;
             // instead, ask the pool to spawn a new connection
-            if conn.rx.try_recv().is_ok() {
-                pool.spawn_conn().await.unwrap();
-            } else {
+            if conn.is_live() {
                 pool.conns.push_front(conn);
+            } else {
+                pool.spawn_conn().await.unwrap();
             }
 
             // if pool was empty, notify that a connection is now available
@@ -56,7 +56,7 @@ impl std::ops::Deref for CheckedOutConnection {
 }
 
 impl ConnectionPool {
-    pub async fn new(config: db::Config) -> Self {
+    pub async fn new(config: db::Config) -> eyre::Result<Self> {
         let pool_size = config.pool_size;
         assert!(pool_size > 0, "pool size must be greater than 0");
 
@@ -75,13 +75,18 @@ impl ConnectionPool {
         };
 
         for _ in 0..pool_size {
-            inner.spawn_conn().await.unwrap();
+            inner.spawn_conn().await?;
         }
 
-        Self {
+        Ok(Self {
             inner: Arc::new(Mutex::new(inner)),
             timeout: std::time::Duration::from_secs(timeout_s),
-        }
+        })
+    }
+
+    pub async fn pool_size(&self) -> usize {
+        let inner = self.inner.lock().await;
+        inner.config.pool_size
     }
 
     pub async fn get_conn(&self) -> eyre::Result<CheckedOutConnection> {
@@ -122,6 +127,22 @@ impl ConnectionPool {
                 }
             }
         }
+    }
+
+    /// Drop all existing connections in the pool and replace them with new connections.
+    pub async fn reload(&mut self, config: db::Config) -> eyre::Result<()> {
+        let mut inner = self.inner.lock().await;
+
+        // drop and replace the list of connections
+        inner.config = config;
+        inner.conns = VecDeque::new();
+
+        // spawn new connections to fill the pool
+        for _ in 0..inner.config.pool_size {
+            inner.spawn_conn().await?;
+        }
+
+        Ok(())
     }
 
     pub async fn debug(&self) -> String {

@@ -2,7 +2,7 @@ import Connection from "../../models/connection.ts";
 
 export interface Props {
   connections: Connection[];
-  selected: string;
+  selected: string | null;
   onSelect: (name: string) => void;
   onManageConnections: () => void;
 }

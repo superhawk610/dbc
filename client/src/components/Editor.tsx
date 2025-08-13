@@ -26,8 +26,6 @@ const DEFAULT_TAB: EditorTab = {
     "-- enter query here\n",
 };
 
-console.log({ DEFAULT_TAB });
-
 const EDITOR_OPTIONS: editorNS.IStandaloneEditorConstructionOptions = {
   automaticLayout: true,
   fontSize: 15,

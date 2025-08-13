@@ -4,7 +4,7 @@ import {
   HiDocumentAdd as NewTabIcon,
   HiViewList as ListIcon,
 } from "react-icons/hi";
-import { get, post } from "./api.ts";
+import { get, paginatedQuery, rawQuery } from "./api.ts";
 
 import useResize from "./hooks/useResize.tsx";
 import Navbar from "./components/Navbar.tsx";
@@ -14,6 +14,7 @@ import DatabaseSelect from "./components/editor/DatabaseSelect.tsx";
 import SchemaSelect from "./components/editor/SchemaSelect.tsx";
 import QueryResults from "./components/QueryResults.tsx";
 import Pagination from "./components/Pagination.tsx";
+import Config from "./models/config.ts";
 import Connection from "./models/connection.ts";
 import { PaginatedQueryResult } from "./models/query.ts";
 import Database from "./models/database.ts";
@@ -42,12 +43,8 @@ function App() {
   const [res, setRes] = useState<PaginatedQueryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // FIXME: read from server
-  const [connections, setConnections] = useState([
-    { name: "default" } as Connection,
-  ]);
-  const [connection, setConnection] = useState("default");
-
+  const [connections, setConnections] = useState<Connection[] | null>(null);
+  const [connection, setConnection] = useState<string | null>(null);
   const [databases, setDatabases] = useState<Database[] | null>(null);
   const [database, setDatabase] = useState<string | null>(null);
   const [schemas, setSchemas] = useState<Schema[] | null>(null);
@@ -60,12 +57,33 @@ function App() {
   const [query, setQuery] = useState<string | null>(null);
   const queryRef = useRef({} as LastQuery);
 
-  // TODO: switch between multiple connections
+  useResize({
+    active: showResults,
+    resizeRef,
+    resizeHandleRef,
+    minHeight: EDITOR_HEIGHT.min,
+    defaultHeight: EDITOR_HEIGHT.default,
+  });
+
   useEffect(() => {
     (async () => {
+      const config = await get<Config>("/config");
+      setConnections(config.connections);
+
+      // select first available connection by default
+      if (config.connections.length > 0) {
+        setConnection(config.connections[0].name);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!connection) return;
+
+    (async () => {
       const [databases, schemas] = await Promise.all([
-        get<Database[]>("/db/databases"),
-        get<Schema[]>("/db/schemas"),
+        rawQuery<Database[]>(connection, "/db/databases"),
+        rawQuery<Schema[]>(connection, "/db/schemas"),
       ]);
 
       setDatabases(databases);
@@ -77,35 +95,32 @@ function App() {
       // select first available schema by default
       if (schemas.length > 0) setSchema(schemas[0].schema_name);
     })();
-  }, []);
+  }, [connection]);
 
   useEffect(() => {
+    if (!connection || !schema) return;
+
     (async () => {
-      const tables = await get<Table[]>(`/db/schemas/${schema}/tables`);
+      const tables = await rawQuery<Table[]>(
+        connection,
+        `/db/schemas/${schema}/tables`,
+      );
       setTables(tables);
     })();
   }, [schema]);
-
-  useResize({
-    active: showResults,
-    resizeRef,
-    resizeHandleRef,
-    minHeight: EDITOR_HEIGHT.min,
-    defaultHeight: EDITOR_HEIGHT.default,
-  });
 
   async function dispatchQuery(query: string, page: number, pageSize: number) {
     // show results pane
     setShowResults(true);
 
     try {
-      const res = await post("/query", { query, page, page_size: pageSize });
+      const res = await paginatedQuery(connection!, query, page, pageSize);
       setError(null);
       setRes(res);
 
       // if the statement contained DDL, refresh the table view
-      if (res.is_ddl) {
-        const tables = await get("/db/tables");
+      if (res.entries.is_ddl) {
+        const tables = await rawQuery<Table[]>(connection!, "/db/tables");
         setTables(tables);
       }
     } catch (err) {
@@ -132,9 +147,21 @@ function App() {
     dispatchQuery(query, page, pageSize);
   }, [query, page, pageSize]);
 
+  function handleSave(updatedConnections: Connection[]) {
+    setConnections(updatedConnections);
+
+    // as long as the existing connection is still present, we're done
+    if (updatedConnections.find((c) => c.name === connection)) return;
+
+    // if the existing connection no longer exists, default to the first
+    setConnection(
+      updatedConnections.length > 0 ? updatedConnections[0].name : null,
+    );
+  }
+
   return (
     <div className="flex flex-col items-stretch w-screen h-screen">
-      <Navbar onSaveSettings={setConnections}>
+      <Navbar onSaveSettings={handleSave}>
         <button
           type="button"
           className="btn btn-sm"
@@ -191,7 +218,7 @@ function App() {
                       <button
                         type="button"
                         onClick={async () => {
-                          const res = await get(
+                          const res = await get<{ ddl: string }>(
                             `/db/ddl/table/${row["table_name"]}`,
                           );
 
@@ -248,7 +275,7 @@ function App() {
       <SettingsModal
         active={settingsModalActive}
         onClose={() => setSettingsModalsActive(false)}
-        onSave={setConnections}
+        onSave={handleSave}
       />
 
       {showResults && (

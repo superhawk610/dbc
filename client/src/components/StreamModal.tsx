@@ -17,7 +17,7 @@ function StreamModalBody({ actions }: Props) {
 
       socket.onmessage = ({ data }) => setOutput((o) => o + data + "\n");
       socket.onerror = (err) => console.error(err);
-      socket.onopen = () => socket.send("hello");
+      // socket.onopen = () => socket.send("hello");
 
       socketRef.current = socket;
     }
@@ -32,7 +32,7 @@ function StreamModalBody({ actions }: Props) {
     <Modal.Body>
       <div
         ref={scrollRef}
-        className="max-h-[400px] overflow-auto bg-neutral/80 rounded-md"
+        className="h-56 text-sm overflow-auto bg-neutral/80 rounded-md"
       >
         <pre className="p-4 text-neutral-content font-mono">{output}</pre>
       </div>

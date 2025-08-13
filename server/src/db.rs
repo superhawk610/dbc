@@ -36,21 +36,31 @@ impl Config {
     }
 }
 
-pub fn spawn_conn<T>(conn: tokio_postgres::Connection<Socket, T>, tx: Sender<()>)
+pub fn spawn_conn<T>(conn: tokio_postgres::Connection<Socket, T>, tx: Sender<()>, rx: Receiver<()>)
 where
     T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     tokio::spawn(async move {
-        if let Err(e) = conn.await {
-            tracing::error!("connection error: {}", e);
-            tx.send(()).unwrap();
+        tokio::select! {
+            // the connection will never resolve to `Ok()`; if an error is
+            // encountered, it will resolve to `Err()`
+            Err(e) = conn => {
+                tracing::error!("connection error: {}", e);
+            }
+
+            // if a kill signal is received instead, terminate the connection
+            _ = rx => {}
         }
+
+        // fire one-shot to close channel and terminate async task
+        let _ = tx.send(());
     });
 }
 
 pub struct Connection {
     pub client: tokio_postgres::Client,
-    pub rx: Receiver<()>,
+    pub tx: Option<Sender<()>>,
+    pub rx: Option<Receiver<()>>,
 }
 
 impl std::ops::Deref for Connection {
@@ -61,23 +71,55 @@ impl std::ops::Deref for Connection {
     }
 }
 
+impl Connection {
+    /// Checks whether a connection is still live.
+    ///
+    /// If the connection's async task is still running, the sender
+    /// side of the one-shot channel will still be live. Once the
+    /// task terminates (either due to a connection error or a manual
+    /// kill), the task will terminate and the connection will no longer
+    /// be live.
+    pub fn is_live(&mut self) -> bool {
+        self.rx.take_if(|rx| rx.try_recv().is_ok()).is_some()
+    }
+
+    /// Kill the connection if it's still alive.
+    ///
+    /// Calling this method multiple times is safe; any call after the
+    /// first will have no effect.
+    pub async fn kill(&mut self) {
+        if let Some(tx) = self.tx.take() {
+            let _ = tx.send(());
+        }
+    }
+}
+
 pub async fn connect(config: &Config) -> eyre::Result<Connection> {
-    let (tx, rx) = channel();
+    let (live_tx, live_rx) = channel();
+    let (kill_tx, kill_rx) = channel();
 
     if config.ssl {
         let tls = MakeTlsConnector::new(TlsConnector::new()?);
         let (client, conn) = tokio_postgres::connect(&config.conn_str(), tls).await?;
 
-        spawn_conn(conn, tx);
+        spawn_conn(conn, live_tx, kill_rx);
 
-        Ok(Connection { client, rx })
+        Ok(Connection {
+            client,
+            rx: Some(live_rx),
+            tx: Some(kill_tx),
+        })
     } else {
         let (client, conn) =
             tokio_postgres::connect(&config.conn_str(), tokio_postgres::NoTls).await?;
 
-        spawn_conn(conn, tx);
+        spawn_conn(conn, live_tx, kill_rx);
 
-        Ok(Connection { client, rx })
+        Ok(Connection {
+            client,
+            rx: Some(live_rx),
+            tx: Some(kill_tx),
+        })
     }
 }
 

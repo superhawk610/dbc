@@ -70,16 +70,25 @@ async fn main() -> eyre::Result<()> {
             "/config",
             get(routes::get_config).put(routes::update_config),
         )
-        .at("/query", post(routes::handle_query))
+        .at("/query", post(routes::handle_query));
+
+    #[cfg(debug_assertions)]
+    let router = router.nest(
+        "/debug",
+        Route::new().at("/state", get(routes::debug::get_state)),
+    );
+
+    let router = router
         .with(poem::middleware::Cors::new())
         .with(poem::middleware::Tracing)
         .around(routes::format_eyre)
         .data(state);
 
-    // when bundled, have the system assign us a port
     let server_port = if cfg!(feature = "bundle") {
+        // when bundled, have the system assign us a port
         0
     } else {
+        // otherwise, use the port specified in the config
         std::env::var("API_PORT")
             .expect("API_PORT is set")
             .parse::<usize>()
@@ -89,6 +98,7 @@ async fn main() -> eyre::Result<()> {
     let server_addr = format!("127.0.0.1:{server_port}");
     let (acceptor, _server_port) = dbc::server::bind_acceptor(&server_addr).await;
 
+    // spawn the server in a background task
     let _server_handle = tokio::spawn(async move {
         Server::new_with_acceptor(acceptor)
             .run(router)
@@ -96,9 +106,11 @@ async fn main() -> eyre::Result<()> {
             .unwrap();
     });
 
+    // if we're bundling, open the webview in the main thread
     #[cfg(feature = "bundle")]
     dbc::server::WebView::launch(_server_port).await;
 
+    // otherwise, just block on the server task
     #[cfg(not(feature = "bundle"))]
     {
         _server_handle.await.unwrap();

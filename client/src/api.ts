@@ -1,17 +1,26 @@
+import { PaginatedQueryResult } from "./models/query.ts";
+
 const baseUrl = `http://${import.meta.env.VITE_API_BASE}`;
 const socketUrl = `ws://${import.meta.env.VITE_API_BASE}`;
 
 const NO_CONTENT = 204;
 
+export interface RequestOpts {
+  headers?: Record<string, string>;
+}
+
 const req = (method: string) => {
-  return async <T>(path: string, data?: object) => {
+  return async <T>(
+    path: string,
+    data?: object,
+    opts?: RequestOpts,
+  ): Promise<T> => {
     const response = await fetch(`${baseUrl}${path}`, {
       mode: "cors",
       method,
       headers: {
+        ...(opts?.headers ?? {}),
         "content-type": "application/json",
-        // FIXME: select connection when issuing query
-        "x-conn-name": "default",
       },
       body: JSON.stringify(data),
     });
@@ -21,12 +30,25 @@ const req = (method: string) => {
     }
 
     if (response.status === NO_CONTENT) {
-      return null;
+      return null as T;
     }
 
     return response.json();
   };
 };
+
+export const rawQuery = <T>(connection: string, path: string) =>
+  get<T>(path, undefined, { headers: { "x-conn-name": connection } });
+
+export const paginatedQuery = (
+  connection: string,
+  query: string,
+  page: number,
+  pageSize: number,
+) =>
+  post<PaginatedQueryResult>("/query", { query, page, page_size: pageSize }, {
+    headers: { "x-conn-name": connection },
+  });
 
 export const get = req("GET");
 export const post = req("POST");
