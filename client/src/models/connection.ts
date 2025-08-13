@@ -5,4 +5,5 @@ export default interface Connection {
   username: string;
   password: string;
   database: string;
+  ssl: boolean;
 }

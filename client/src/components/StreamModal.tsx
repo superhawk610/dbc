@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { HiOutlineChip as ServerIcon } from "react-icons/hi";
 import Modal, { closeModal, ModalActions } from "./Modal.tsx";
 import { createSocket } from "../api.ts";
 
@@ -32,7 +33,7 @@ function StreamModalBody({ actions }: Props) {
     <Modal.Body>
       <div
         ref={scrollRef}
-        className="h-56 text-sm overflow-auto bg-neutral/80 rounded-md"
+        className="h-72 text-sm overflow-auto bg-neutral/80 rounded-md"
       >
         <pre className="p-4 text-neutral-content font-mono">{output}</pre>
       </div>
@@ -56,7 +57,15 @@ function StreamModalBody({ actions }: Props) {
 
 export default function StreamModal() {
   return (
-    <Modal heading="Stream" buttonText="Stream">
+    <Modal
+      size="medium"
+      heading="Server Logs"
+      buttonText={
+        <>
+          <ServerIcon /> Logs
+        </>
+      }
+    >
       {(actions) => <StreamModalBody actions={actions} />}
     </Modal>
   );

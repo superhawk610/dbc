@@ -38,6 +38,10 @@ impl WebView {
             .args(&["task", "build", "--outDir", asset_dir.to_str().unwrap()])
             .env("VITE_API_BASE", format!("localhost:{}", server_port))
             .env("VITE_LOCAL_STORAGE", local_storage)
+            .env(
+                "VITE_SHOW_LOGS",
+                if cfg!(debug_assertions) { "1" } else { "" },
+            )
             .env("NODE_ENV", "production")
             .spawn()
             .unwrap()

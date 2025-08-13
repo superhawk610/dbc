@@ -120,7 +120,10 @@ function App() {
 
       // if the statement contained DDL, refresh the table view
       if (res.entries.is_ddl) {
-        const tables = await rawQuery<Table[]>(connection!, "/db/tables");
+        const tables = await rawQuery<Table[]>(
+          connection!,
+          `/db/schemas/${schema}/tables`,
+        );
         setTables(tables);
       }
     } catch (err) {
@@ -209,7 +212,7 @@ function App() {
               <ul className="menu w-full">
                 {!tables
                   ? (
-                    <li>
+                    <li className="p-4">
                       <span className="loading loading-infinity loading-xl" />
                     </li>
                   )
@@ -220,6 +223,8 @@ function App() {
                         onClick={async () => {
                           const res = await get<{ ddl: string }>(
                             `/db/ddl/table/${row["table_name"]}`,
+                            undefined,
+                            { headers: { "x-conn-name": connection! } },
                           );
 
                           // insert text into editor

@@ -40,12 +40,15 @@ export interface Props extends ModalControlProps {
   heading: string;
   actions?: React.ReactNode;
   children: (actions: ModalActions) => React.ReactNode;
+  size?: "default" | "medium" | "large";
 
   // managed control
   buttonText: React.ReactNode;
 }
 
-function Modal({ buttonText, heading, children, active, onClose }: Props) {
+function Modal(
+  { buttonText, heading, children, size = "default", active, onClose }: Props,
+) {
   const [showBody, setShowBody] = useState(active ?? false);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
@@ -75,7 +78,15 @@ function Modal({ buttonText, heading, children, active, onClose }: Props) {
       )}
 
       <dialog ref={dialogRef} className="modal">
-        <div className="modal-box">
+        <div
+          className={`modal-box ${
+            size === "large"
+              ? "max-w-[800px]"
+              : size === "medium"
+              ? "max-w-[600px]"
+              : ""
+          }`}
+        >
           <h3 className="font-bold text-lg">{heading}</h3>
           {showBody && children({
             close: () => {

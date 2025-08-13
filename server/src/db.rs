@@ -4,7 +4,9 @@ use serde::Serialize;
 use std::collections::HashMap;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::oneshot::{Receiver, Sender, channel};
-use tokio_postgres::Socket;
+use tokio_postgres::{Socket, types::ToSql};
+
+pub type SqlParam<'a> = &'a (dyn ToSql + Sync);
 
 #[derive(Debug, bon::Builder)]
 pub struct Config {
@@ -210,7 +212,7 @@ pub async fn list_databases(client: &tokio_postgres::Client) -> eyre::Result<Que
 pub async fn table_ddl(client: &tokio_postgres::Client, table_name: &str) -> eyre::Result<String> {
     // precision = np_radix ^ np_precision
     // typically uses 2 or 10 as the radix, e.g. 2^32 or 10^20
-    let sql = "
+    let columns_sql = "
     SELECT
       column_name,
       column_default,
@@ -223,9 +225,29 @@ pub async fn table_ddl(client: &tokio_postgres::Client, table_name: &str) -> eyr
     FROM information_schema.columns
     WHERE table_name = $1
     ORDER BY ordinal_position";
-    let res = query(client, sql, &[&table_name]).await?;
 
-    let column_defs = res
+    let constraints_sql = "
+    SELECT *
+    FROM information_schema.key_column_usage
+    WHERE table_name = $1";
+
+    let indexes_sql = "
+    SELECT *
+    FROM pg_indexes
+    WHERE tablename = $1";
+
+    let params: Vec<SqlParam> = vec![&table_name];
+    let (columns, constraints, indexes) = futures_util::try_join!(
+        query(client, columns_sql, &params),
+        query(client, constraints_sql, &params),
+        query(client, indexes_sql, &params),
+    )?;
+
+    // TODO: PRIMARY KEY, list indexes
+    dbg!(constraints);
+    dbg!(indexes);
+
+    let column_defs = columns
         .row_maps()
         .into_iter()
         .map(|row| {
@@ -250,10 +272,15 @@ pub async fn table_ddl(client: &tokio_postgres::Client, table_name: &str) -> eyr
             };
 
             format!(
-                "{} {}{}",
+                "{} {}{}{}",
                 row["column_name"].as_str().unwrap(),
                 row["data_type"].as_str().unwrap(),
-                prec_scale.or(char_len).as_deref().unwrap_or("")
+                prec_scale.or(char_len).as_deref().unwrap_or(""),
+                if row["is_nullable"].as_str().unwrap() == "YES" {
+                    " not null"
+                } else {
+                    ""
+                }
             )
         })
         .collect::<Vec<_>>();
@@ -268,7 +295,7 @@ pub async fn table_ddl(client: &tokio_postgres::Client, table_name: &str) -> eyr
 pub async fn paginated_query(
     client: &tokio_postgres::Client,
     raw_query: &str,
-    params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
+    params: &[SqlParam<'_>],
     page: usize,
     page_size: usize,
 ) -> eyre::Result<PaginatedQueryResult> {
@@ -277,6 +304,21 @@ pub async fn paginated_query(
     }
 
     let base_query = indent(&parse_query(raw_query));
+
+    // DDL queries can't be counted/paginated like normal queries, but we
+    // still support a pagination wrapper around their results; they'll always
+    // return a single result representing the DDL command's output
+    if is_ddl(&base_query) {
+        return Ok(PaginatedQueryResult {
+            page: 1,
+            page_size,
+            page_count: 1,
+            total_count: 1,
+            total_pages: 1,
+            entries: query(client, &base_query, params).await?,
+        });
+    }
+
     let count_query = format!("SELECT COUNT(*) FROM (\n{base_query}\n);");
 
     let limit = page_size;
@@ -306,7 +348,7 @@ pub async fn paginated_query(
 pub async fn query(
     client: &tokio_postgres::Client,
     raw_query: &str,
-    params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
+    params: &[SqlParam<'_>],
 ) -> eyre::Result<QueryResult> {
     let query = parse_query(raw_query);
     let stmt = client.prepare(&query).await?;
