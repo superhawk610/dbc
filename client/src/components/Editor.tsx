@@ -6,9 +6,16 @@ import React, {
   useState,
 } from "react";
 import { Editor as MonacoEditor, loader, Monaco } from "@monaco-editor/react";
-import { editor as editorNS, Position, Range, Uri } from "monaco-editor";
+import {
+  editor as editorNS,
+  MarkerSeverity,
+  Position,
+  Range,
+  Uri,
+} from "monaco-editor";
 import { HiDocumentText as TabIcon, HiX as XIcon } from "react-icons/hi";
 
+const OWNER = "dbc";
 export const LAST_QUERY = "lastQuery";
 
 const THEME_LIST_JSON = "https://unpkg.com/monaco-themes/themes/themelist.json";
@@ -63,6 +70,25 @@ function excludeComments(line: string) {
   if (lineCommentStartIdx > -1) line = line.slice(0, blockCommentStartIdx);
 
   return line;
+}
+
+function positionToRange(
+  editor: editorNS.IStandaloneCodeEditor,
+  position: number,
+): Range | null {
+  const content = editor.getValue();
+
+  let lineIdx = 0;
+  let remaining = position;
+  while (true) {
+    const lineLen = content.indexOf("\n");
+    if (lineLen > remaining) {
+      return new Range(lineIdx + 1, remaining - 1, lineIdx + 1, remaining);
+    }
+
+    lineIdx += 1;
+    remaining -= lineLen;
+  }
 }
 
 function activeQueryRange(
@@ -168,6 +194,8 @@ export interface EditorRef {
   focus: () => void;
   insert: (text: string) => void;
   openTab: (tab: EditorTab) => void;
+  addError: (message: string, position: number) => void;
+  clearErrors: () => void;
 }
 
 export default forwardRef(
@@ -195,6 +223,18 @@ export default forwardRef(
         setTabs([...tabs, tab]);
         setActiveTabIndex(tabs.length);
       },
+      addError: (message: string, position: number) => {
+        const range = positionToRange(monacoRef.current.editor, position);
+        if (!range) return;
+
+        monacoRef.current.monaco.editor.setModelMarkers(
+          monacoRef.current.editor.getModel()!,
+          OWNER,
+          [{ message, severity: MarkerSeverity.Error, ...range }],
+        );
+      },
+      clearErrors: () =>
+        monacoRef.current.monaco.editor.removeAllMarkers(OWNER),
     }), [tabs]);
 
     useEffect(() => {

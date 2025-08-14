@@ -209,7 +209,11 @@ pub async fn list_databases(client: &tokio_postgres::Client) -> eyre::Result<Que
     query(client, sql, &[]).await
 }
 
-pub async fn table_ddl(client: &tokio_postgres::Client, table_name: &str) -> eyre::Result<String> {
+pub async fn table_ddl(
+    client: &tokio_postgres::Client,
+    schema: &str,
+    table: &str,
+) -> eyre::Result<String> {
     // precision = np_radix ^ np_precision
     // typically uses 2 or 10 as the radix, e.g. 2^32 or 10^20
     let columns_sql = "
@@ -223,45 +227,72 @@ pub async fn table_ddl(client: &tokio_postgres::Client, table_name: &str) -> eyr
       -- numeric_precision_radix,
       numeric_scale
     FROM information_schema.columns
-    WHERE table_name = $1
+    WHERE table_schema = $1
+    AND table_name = $2
     ORDER BY ordinal_position";
 
-    let constraints_sql = "
-    SELECT *
-    FROM information_schema.key_column_usage
-    WHERE table_name = $1";
-
     let indexes_sql = "
-    SELECT *
+    SELECT indexname, indexdef
     FROM pg_indexes
-    WHERE tablename = $1";
+    WHERE schemaname = $1
+    AND tablename = $2";
 
-    let params: Vec<SqlParam> = vec![&table_name];
-    let (columns, constraints, indexes) = futures_util::try_join!(
+    let params: Vec<SqlParam> = vec![&schema, &table];
+    let (columns, indexes) = futures_util::try_join!(
         query(client, columns_sql, &params),
-        query(client, constraints_sql, &params),
         query(client, indexes_sql, &params),
     )?;
 
-    // TODO: PRIMARY KEY, list indexes
-    dbg!(constraints);
-    dbg!(indexes);
+    let mut indexes = indexes.row_maps();
+    let pkey_col_name = if let Some(i) = indexes
+        .iter()
+        .position(|i| i["indexname"].as_str().unwrap().ends_with("_pkey"))
+    {
+        // determine primary key column by parsing index definition
+        // e.g. `CREATE UNIQUE INDEX users_pkey ON public.users USING btree (id)`
+        let index = indexes.remove(i);
+        let pkey_def = index["indexdef"].as_str().unwrap();
+        let start_paren_idx = pkey_def.find("(").unwrap();
+        let id_col_name = &pkey_def[start_paren_idx + 1..pkey_def.len() - 1];
+        Some(id_col_name.to_owned())
+    } else {
+        None
+    };
 
     let column_defs = columns
         .row_maps()
         .into_iter()
         .map(|row| {
-            let prec_scale = if row["numeric_precision"].is_null() {
-                None
+            let col_name = row["column_name"].as_str().unwrap();
+            let mut data_type = row["data_type"].as_str().unwrap();
+
+            let prec_scale = if let Some(prec) = row["numeric_precision"].as_i64() {
+                // Postgres differentiates between integer types using `numeric_precision`,
+                // but the syntax is different from decimal types (the type name itself changes,
+                // instead of using (prec, scale) postfix notation)
+                match (data_type, prec) {
+                    ("integer", 8) => {
+                        data_type = "smallint";
+                        None
+                    }
+                    ("integer", 16) => None,
+                    ("integer", 32) => {
+                        data_type = "bigint";
+                        None
+                    }
+                    ("integer", _) => unreachable!("Postgres only supports 3 int precisions"),
+                    ("smallint", _) => None,
+                    ("bigint", _) => None,
+                    _ => Some(format!(
+                        "({}, {})",
+                        prec,
+                        row["numeric_scale"].as_i64().unwrap(),
+                    )),
+                }
             } else {
-                Some(format!(
-                    "({}, {})",
-                    row["numeric_precision"].as_i64().unwrap(),
-                    row["numeric_scale"].as_i64().unwrap(),
-                ))
+                None
             };
 
-            // TODO: abbreviate data types when possible, e.g. character varying -> varchar
             let char_len = if row["character_maximum_length"].is_null() {
                 None
             } else {
@@ -272,23 +303,46 @@ pub async fn table_ddl(client: &tokio_postgres::Client, table_name: &str) -> eyr
             };
 
             format!(
-                "{} {}{}{}",
-                row["column_name"].as_str().unwrap(),
-                row["data_type"].as_str().unwrap(),
+                "{} {}{}{}{}{}",
+                col_name,
+                data_type,
                 prec_scale.or(char_len).as_deref().unwrap_or(""),
-                if row["is_nullable"].as_str().unwrap() == "YES" {
-                    " not null"
+                if pkey_col_name.as_ref().is_some_and(|col| col == col_name) {
+                    " PRIMARY KEY"
                 } else {
                     ""
+                },
+                if row["is_nullable"].as_str().unwrap() == "YES" {
+                    " NOT NULL"
+                } else {
+                    ""
+                },
+                // TODO: convert `int` / `nextval` to `serial`
+                if let Some(default_val) = row["column_default"].as_str() {
+                    format!(" DEFAULT {default_val}")
+                } else {
+                    "".to_owned()
                 }
             )
         })
         .collect::<Vec<_>>();
 
     Ok(format!(
-        "CREATE TABLE {} (\n  {}\n);",
-        table_name,
-        column_defs.join(",\n  ")
+        "CREATE TABLE {} (\n  {}\n);{}",
+        table,
+        column_defs.join(",\n  "),
+        if indexes.is_empty() {
+            "".to_owned()
+        } else {
+            format!(
+                "\n\n{}",
+                indexes
+                    .iter()
+                    .map(|i| format!("{};", i["indexdef"].as_str().unwrap()))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            )
+        },
     ))
 }
 
@@ -303,7 +357,7 @@ pub async fn paginated_query(
         format!("  {}", s.replace('\n', "\n  "))
     }
 
-    let base_query = indent(&parse_query(raw_query));
+    let base_query = parse_query(raw_query);
 
     // DDL queries can't be counted/paginated like normal queries, but we
     // still support a pagination wrapper around their results; they'll always
@@ -319,6 +373,7 @@ pub async fn paginated_query(
         });
     }
 
+    let base_query = indent(&base_query);
     let count_query = format!("SELECT COUNT(*) FROM (\n{base_query}\n);");
 
     let limit = page_size;
@@ -351,7 +406,7 @@ pub async fn query(
     params: &[SqlParam<'_>],
 ) -> eyre::Result<QueryResult> {
     let query = parse_query(raw_query);
-    let stmt = client.prepare(&query).await?;
+    let stmt = client.prepare(&query).await.map_err(PgError::from)?;
 
     let columns = stmt
         .columns()
@@ -363,7 +418,7 @@ pub async fn query(
         .collect::<Vec<_>>();
 
     if stmt.columns().iter().all(col_supported) {
-        let rows = client.query(&stmt, params).await?;
+        let rows = client.query(&stmt, params).await.map_err(PgError::from)?;
 
         let mut data_rows: Vec<Vec<serde_json::Value>> = Vec::with_capacity(rows.len());
         for row in rows {
@@ -385,7 +440,7 @@ pub async fn query(
         // fall back on simple query (uses TEXT instead of BINARY encoding)
         tracing::info!("falling back on TEXT encoding");
 
-        let rows = client.simple_query(&query).await?;
+        let rows = client.simple_query(&query).await.map_err(PgError::from)?;
 
         let mut data_rows: Vec<Vec<serde_json::Value>> = Vec::with_capacity(rows.len());
         for cmd in rows {
@@ -409,6 +464,66 @@ pub async fn query(
             rows: data_rows,
             is_ddl: is_ddl(&query),
         })
+    }
+}
+
+#[derive(Debug)]
+struct PgError {
+    source: tokio_postgres::error::Error,
+    inner: Option<PgErrorInner>,
+}
+
+#[derive(Debug)]
+struct PgErrorInner {
+    code: String,
+    message: String,
+    severity: String,
+    position: Option<u32>,
+}
+
+impl std::error::Error for PgError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.source)
+    }
+}
+
+impl std::fmt::Display for PgError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(inner) = &self.inner {
+            write!(f, "{} {}: {}", inner.severity, inner.code, inner.message)?;
+            if let Some(pos) = inner.position {
+                write!(f, " (at position {pos})")?;
+            }
+        } else {
+            write!(f, "{}", self.source)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl From<tokio_postgres::error::Error> for PgError {
+    fn from(source: tokio_postgres::error::Error) -> Self {
+        let inner = if let Some(err) = source.as_db_error() {
+            Some(PgErrorInner {
+                code: err.code().code().to_owned(),
+                message: err.message().to_owned(),
+                severity: err.severity().to_owned(),
+                position: err
+                    .position()
+                    .and_then(|p| match p {
+                        tokio_postgres::error::ErrorPosition::Original(pos) => Some(pos),
+                        // TODO: handle `Internal` error position (this seems to occur when
+                        // Postgres generates its own query that's for some reason valid/erroneous)
+                        tokio_postgres::error::ErrorPosition::Internal { .. } => None,
+                    })
+                    .copied(),
+            })
+        } else {
+            None
+        };
+
+        Self { source, inner }
     }
 }
 

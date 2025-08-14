@@ -113,6 +113,9 @@ function App() {
     // show results pane
     setShowResults(true);
 
+    // clear any previously set errors
+    editorRef.current!.clearErrors();
+
     try {
       const res = await paginatedQuery(connection!, query, page, pageSize);
       setError(null);
@@ -127,9 +130,18 @@ function App() {
         setTables(tables);
       }
     } catch (err) {
+      const message = (err as Error).message;
+
       console.log("caught");
-      setError((err as Error).message);
+      setError(message);
       setRes(null);
+
+      // FIXME: provided structured query error instead of using regex parsing
+      const regex = /\(at position (\d+)\)/.exec(message);
+      if (regex) {
+        const errorPos = Number(regex[1]);
+        editorRef.current!.addError(message, errorPos);
+      }
     }
   }
 
@@ -222,7 +234,9 @@ function App() {
                         type="button"
                         onClick={async () => {
                           const res = await get<{ ddl: string }>(
-                            `/db/ddl/table/${row["table_name"]}`,
+                            `/db/ddl/schemas/${schema}/tables/${
+                              row["table_name"]
+                            }`,
                             undefined,
                             { headers: { "x-conn-name": connection! } },
                           );

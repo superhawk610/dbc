@@ -184,10 +184,10 @@ pub async fn get_tables(
 pub async fn get_table_ddl(
     TypedHeader(conn_name): TypedHeader<XConnName>,
     Data(state): Data<&Arc<crate::State>>,
-    Path(table_name): Path<String>,
+    Path((schema, table)): Path<(String, String)>,
 ) -> eyre::Result<Json<serde_json::Value>> {
     let conn = state.get_conn(&conn_name).await?;
-    let ddl = crate::db::table_ddl(&conn, &table_name).await?;
+    let ddl = crate::db::table_ddl(&conn, &schema, &table).await?;
     Ok(Json(serde_json::json!({ "ddl": ddl })))
 }
 

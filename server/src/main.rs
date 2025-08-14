@@ -64,7 +64,10 @@ async fn main() -> eyre::Result<()> {
                 .at("/databases", get(routes::get_databases))
                 .at("/schemas", get(routes::get_schemas))
                 .at("/schemas/:schema/tables", get(routes::get_tables))
-                .at("/ddl/table/:table_name", get(routes::get_table_ddl)),
+                .at(
+                    "/ddl/schemas/:schema/tables/:table",
+                    get(routes::get_table_ddl),
+                ),
         )
         .at(
             "/config",
