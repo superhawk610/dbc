@@ -13,13 +13,18 @@ import {
   Range,
   Uri,
 } from "monaco-editor";
-import { HiDocumentText as TabIcon, HiX as XIcon } from "react-icons/hi";
+import {
+  HiDatabase as DatabaseIcon,
+  HiDocumentText as TabIcon,
+  HiX as XIcon,
+} from "react-icons/hi";
 import DbcCompletionProvider, {
   DbcCompletionProviderContext,
 } from "../CompletionProvider.ts";
+import { t } from "../../dist/assets/index-DTHnZ14c.js";
 
 const OWNER = "dbc";
-export const LAST_QUERY = "lastQuery";
+export const SAVED_TABS = "savedTabs";
 
 const THEME_LIST_JSON = "https://unpkg.com/monaco-themes/themes/themelist.json";
 
@@ -32,8 +37,7 @@ const DEFAULT_TAB: EditorTab = {
   id: "dbc://query/1",
   name: "Query / Script 1",
   language: "sql",
-  contents: globalThis.localStorage.getItem(LAST_QUERY) ||
-    "-- enter query here\n",
+  contents: "-- enter query here\n",
 };
 
 const EDITOR_OPTIONS: editorNS.IStandaloneEditorConstructionOptions = {
@@ -172,7 +176,7 @@ export interface EditorTab {
   name: string;
   language: string;
   contents: string;
-  icon?: React.ReactNode | null;
+  icon?: string;
 }
 
 export interface EditorRef {
@@ -183,6 +187,7 @@ export interface EditorRef {
   openTab: (tab: EditorTab) => void;
   addError: (message: string, position: number) => void;
   clearErrors: () => void;
+  saveTabs: () => void;
 }
 
 export default forwardRef(
@@ -190,7 +195,13 @@ export default forwardRef(
     { onClick, onClickLabel, sidebar, toolbar, connection, schema }: Props,
     ref,
   ) {
-    const [tabs, setTabs] = useState<EditorTab[]>([DEFAULT_TAB]);
+    const [tabs, setTabs] = useState<EditorTab[]>(() => {
+      // attempt to restore previously-saved tabs, falling back to default
+      // if this is the first launch
+      const json = globalThis.localStorage.getItem(SAVED_TABS);
+      return json ? JSON.parse(json) : [DEFAULT_TAB];
+    });
+
     const [activeTabIndex, setActiveTabIndex] = useState(0);
     const activeTab = tabs[activeTabIndex];
 
@@ -221,8 +232,22 @@ export default forwardRef(
       insert: (text: string) =>
         monacoRef.current.editor.trigger("keyboard", "type", { text }),
       openTab: (tab: EditorTab) => {
-        setTabs([...tabs, tab]);
-        setActiveTabIndex(tabs.length);
+        // store the current tab's contents before switching tabs
+        tabs[activeTabIndex].contents = monacoRef.current.editor.getValue();
+        let newTabs = tabs;
+
+        // check to see if we already have the tab open; if so, just switch to it
+        const tabIndex = tabs.findIndex((t) => t.id === tab.id);
+        if (tabIndex > -1) {
+          setActiveTabIndex(tabIndex);
+        } else {
+          // if not, create it first and then switch to it
+          newTabs = [...tabs, tab];
+          setActiveTabIndex(tabs.length);
+        }
+
+        setTabs(newTabs);
+        globalThis.localStorage.setItem(SAVED_TABS, JSON.stringify(newTabs));
       },
       addError: (message: string, position: number) => {
         const model = monacoRef.current.editor.getModel()!;
@@ -242,6 +267,13 @@ export default forwardRef(
       },
       clearErrors: () =>
         monacoRef.current.monaco.editor.removeAllMarkers(OWNER),
+      saveTabs: () => {
+        // store the current tab's contents before saving
+        tabs[activeTabIndex].contents = monacoRef.current.editor.getValue();
+        setTabs(tabs);
+
+        globalThis.localStorage.setItem(SAVED_TABS, JSON.stringify(tabs));
+      },
     }), [tabs]);
 
     useEffect(() => {
@@ -311,7 +343,11 @@ export default forwardRef(
 
     function closeTab(id: string, idx: number) {
       // remove the closed tab
-      setTabs(tabs.toSpliced(idx, 1));
+      const newTabs = tabs.toSpliced(idx, 1);
+      setTabs(newTabs);
+
+      // update saved tabs
+      globalThis.localStorage.setItem(SAVED_TABS, JSON.stringify(newTabs));
 
       // close monaco's underlying model
       monacoRef.current!.monaco.editor.getModel(Uri.parse(id))!.dispose();
@@ -319,11 +355,9 @@ export default forwardRef(
       if (idx < activeTabIndex) {
         // if we closed a tab to the left, decrement the active index
         setActiveTabIndex(activeTabIndex - 1);
-      } else if (idx === activeTabIndex) {
-        // if we closed the active tab, choose the new active tab
-        // and set the editor's contents accordingly
-        const newIndex = idx === 0 ? 1 : idx - 1;
-        setActiveTabIndex(newIndex);
+      } else if (idx === tabs.length - 1) {
+        // if we closed the rightmost tab, shift one to the left
+        setActiveTabIndex(idx - 1);
       }
     }
 
@@ -364,10 +398,19 @@ export default forwardRef(
                           ? "bg-primary text-primary-content hover:bg-primary/90"
                           : "bg-base-100 hover:bg-base-100/70"
                       }`}
-                      onClick={() => setActiveTabIndex(idx)}
+                      onClick={() => {
+                        // store the current tab's contents before switching tabs
+                        tabs[activeTabIndex].contents = monacoRef.current.editor
+                          .getValue();
+
+                        setTabs(tabs);
+                        setActiveTabIndex(idx);
+                      }}
                     >
                       <div className="mr-1">
-                        {tab.icon || <TabIcon />}
+                        {tab.icon === "database"
+                          ? <DatabaseIcon />
+                          : <TabIcon />}
                       </div>
                       <span className="min-w-32 max-w-56 mr-2 overflow-hidden whitespace-nowrap text-ellipsis">
                         {prefix && (

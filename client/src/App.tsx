@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  HiDatabase as SchemaTabIcon,
   HiDocumentAdd as NewTabIcon,
   HiViewList as ListIcon,
 } from "react-icons/hi";
@@ -8,7 +7,7 @@ import { get, paginatedQuery, rawQuery } from "./api.ts";
 
 import useResize from "./hooks/useResize.tsx";
 import Navbar from "./components/Navbar.tsx";
-import Editor, { EditorRef, LAST_QUERY } from "./components/Editor.tsx";
+import Editor, { EditorRef } from "./components/Editor.tsx";
 import ConnectionSelect from "./components/editor/ConnectionSelect.tsx";
 import DatabaseSelect from "./components/editor/DatabaseSelect.tsx";
 import SchemaSelect from "./components/editor/SchemaSelect.tsx";
@@ -213,7 +212,7 @@ function App() {
             const contents = editorRef.current!.getContents();
 
             // store the query in local storage to be restored on page reload
-            globalThis.localStorage.setItem(LAST_QUERY, contents);
+            editorRef.current!.saveTabs();
 
             setQuery(editorRef.current!.getActiveQuery() || contents);
           }}
@@ -253,7 +252,7 @@ function App() {
                             name: `Table / ${row["table_name"]}`,
                             language: "sql",
                             contents: res.ddl,
-                            icon: <SchemaTabIcon />,
+                            icon: "database",
                           });
                         }}
                       >
