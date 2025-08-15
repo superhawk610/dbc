@@ -35,7 +35,7 @@ function StreamModalBody({ actions }: Props) {
         ref={scrollRef}
         className="h-72 text-sm overflow-auto bg-neutral/80 rounded-md"
       >
-        <pre className="p-4 text-neutral-content font-mono">{output}</pre>
+        <pre className="m-4 inline-block text-neutral-content font-mono">{output}</pre>
       </div>
       <Modal.Actions className="mt-2">
         <button

@@ -175,6 +175,14 @@ pub struct QueryResultColumn {
     pub type_: String,
 }
 
+pub async fn version_info(client: &tokio_postgres::Client) -> eyre::Result<String> {
+    let sql = "select version();";
+    Ok(query(client, sql, &[]).await?.rows[0][0]
+        .as_str()
+        .unwrap()
+        .to_owned())
+}
+
 // TODO: probably need to optimize this per-database to filter out things
 // like system tables, partitions, etc.
 // see: https://stackoverflow.com/a/58243669/885098

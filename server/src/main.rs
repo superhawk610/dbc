@@ -58,6 +58,7 @@ async fn main() -> eyre::Result<()> {
     use dbc::server::routes;
     let router = Route::new()
         .at("/:channel", get(routes::websocket))
+        .at("/connections/:connection", get(routes::connection_info))
         .nest(
             "/db",
             Route::new()

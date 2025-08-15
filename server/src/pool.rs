@@ -155,7 +155,7 @@ impl ConnectionPool {
 }
 
 impl ConnectionPoolInner {
-    pub async fn spawn_conn(&mut self) -> eyre::Result<()> {
+    async fn spawn_conn(&mut self) -> eyre::Result<()> {
         let conn = db::connect(&self.config).await?;
         self.conns.push_front(conn);
         Ok(())

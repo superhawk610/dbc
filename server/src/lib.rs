@@ -59,6 +59,10 @@ impl State {
                 self.broadcast(format!("Success! {pool_size} connections in pool."))
                     .await;
 
+                let conn = pool.get_conn().await?;
+                let version_info = crate::db::version_info(&conn).await?;
+                self.broadcast(version_info).await;
+
                 let entry = pools.entry(conn_name.to_owned()).insert_entry(pool);
                 entry.get().get_conn().await
             }

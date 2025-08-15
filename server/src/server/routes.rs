@@ -151,6 +151,16 @@ pub async fn update_config(
 }
 
 #[poem::handler]
+pub async fn connection_info(
+    Data(state): Data<&Arc<crate::State>>,
+    Path(connection): Path<String>,
+) -> eyre::Result<Json<serde_json::Value>> {
+    let conn = state.get_conn(&connection).await?;
+    let info = crate::db::version_info(&conn).await?;
+    Ok(Json(serde_json::json!({ "info": info })))
+}
+
+#[poem::handler]
 pub async fn get_databases(
     TypedHeader(conn_name): TypedHeader<XConnName>,
     Data(state): Data<&Arc<crate::State>>,
