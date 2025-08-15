@@ -14,6 +14,9 @@ import {
   Uri,
 } from "monaco-editor";
 import { HiDocumentText as TabIcon, HiX as XIcon } from "react-icons/hi";
+import DbcCompletionProvider, {
+  DbcCompletionProviderContext,
+} from "../CompletionProvider.ts";
 
 const OWNER = "dbc";
 export const LAST_QUERY = "lastQuery";
@@ -44,6 +47,7 @@ const EDITOR_OPTIONS: editorNS.IStandaloneEditorConstructionOptions = {
 };
 
 interface MonacoRef {
+  initialized: boolean;
   editor: editorNS.IStandaloneCodeEditor;
   monaco: Monaco;
   definedThemes: Record<string, boolean>;
@@ -70,25 +74,6 @@ function excludeComments(line: string) {
   if (lineCommentStartIdx > -1) line = line.slice(0, blockCommentStartIdx);
 
   return line;
-}
-
-function positionToRange(
-  editor: editorNS.IStandaloneCodeEditor,
-  position: number,
-): Range | null {
-  const content = editor.getValue();
-
-  let lineIdx = 0;
-  let remaining = position;
-  while (true) {
-    const lineLen = content.indexOf("\n");
-    if (lineLen > remaining) {
-      return new Range(lineIdx + 1, remaining - 1, lineIdx + 1, remaining);
-    }
-
-    lineIdx += 1;
-    remaining -= lineLen;
-  }
 }
 
 function activeQueryRange(
@@ -178,6 +163,8 @@ export interface Props {
   onClickLabel?: string;
   sidebar?: React.ReactNode;
   toolbar?: React.ReactNode;
+  connection: string | null;
+  schema: string | null;
 }
 
 export interface EditorTab {
@@ -199,7 +186,10 @@ export interface EditorRef {
 }
 
 export default forwardRef(
-  function Editor({ onClick, onClickLabel, sidebar, toolbar }: Props, ref) {
+  function Editor(
+    { onClick, onClickLabel, sidebar, toolbar, connection, schema }: Props,
+    ref,
+  ) {
     const [tabs, setTabs] = useState<EditorTab[]>([DEFAULT_TAB]);
     const [activeTabIndex, setActiveTabIndex] = useState(0);
     const activeTab = tabs[activeTabIndex];
@@ -213,6 +203,17 @@ export default forwardRef(
       globalThis.localStorage.getItem("monaco-theme") ?? "vs-dark",
     );
 
+    const providerContextRef = useRef<DbcCompletionProviderContext>({
+      connection,
+      schema,
+    });
+
+    // keep provider context in sync with editor
+    useEffect(() => {
+      providerContextRef.current.connection = connection;
+      providerContextRef.current.schema = schema;
+    }, [connection, schema]);
+
     useImperativeHandle(ref, () => ({
       getContents: () => monacoRef.current.editor.getValue(),
       getActiveQuery: () => activeQuery(monacoRef.current.editor),
@@ -224,8 +225,14 @@ export default forwardRef(
         setActiveTabIndex(tabs.length);
       },
       addError: (message: string, position: number) => {
-        const range = positionToRange(monacoRef.current.editor, position);
-        if (!range) return;
+        const model = monacoRef.current.editor.getModel()!;
+        const pos = model.getPositionAt(position);
+        const range = new Range(
+          pos.lineNumber,
+          pos.column - 1,
+          pos.lineNumber,
+          pos.column,
+        );
 
         monacoRef.current.monaco.editor.setModelMarkers(
           monacoRef.current.editor.getModel()!,
@@ -239,6 +246,10 @@ export default forwardRef(
 
     useEffect(() => {
       (async () => {
+        // prevent duplicate initialization
+        if (monacoRef.current.initialized) return;
+        monacoRef.current.initialized = true;
+
         monacoRef.current.monaco = await loader.init();
 
         const res = await fetch(THEME_LIST_JSON);
@@ -248,6 +259,12 @@ export default forwardRef(
 
         // fetch the active theme, in case it's not already cached
         await fetchTheme(activeTheme, themes[activeTheme], monacoRef.current);
+
+        // register completion provider
+        monacoRef.current.monaco.languages.registerCompletionItemProvider(
+          "sql",
+          new DbcCompletionProvider(providerContextRef.current),
+        );
 
         setShowEditor(true);
       })();

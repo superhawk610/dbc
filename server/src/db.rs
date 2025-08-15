@@ -191,6 +191,20 @@ pub async fn list_tables(
     query(client, sql, &[&schema]).await
 }
 
+pub async fn list_columns(
+    client: &tokio_postgres::Client,
+    schema: &str,
+    table: &str,
+) -> eyre::Result<QueryResult> {
+    let sql = "
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = $1
+    AND table_name = $2
+    ORDER BY ordinal_position";
+    query(client, sql, &[&schema, &table]).await
+}
+
 pub async fn list_schemas(client: &tokio_postgres::Client) -> eyre::Result<QueryResult> {
     let sql = "
     SELECT *

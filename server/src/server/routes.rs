@@ -181,6 +181,23 @@ pub async fn get_tables(
 }
 
 #[poem::handler]
+pub async fn get_columns(
+    TypedHeader(conn_name): TypedHeader<XConnName>,
+    Data(state): Data<&Arc<crate::State>>,
+    Path((schema, table)): Path<(String, String)>,
+) -> eyre::Result<Json<Vec<String>>> {
+    let conn = state.get_conn(&conn_name).await?;
+    Ok(Json(
+        crate::db::list_columns(&conn, &schema, &table)
+            .await?
+            .row_maps()
+            .into_iter()
+            .map(|c| c["column_name"].as_str().unwrap().to_owned())
+            .collect(),
+    ))
+}
+
+#[poem::handler]
 pub async fn get_table_ddl(
     TypedHeader(conn_name): TypedHeader<XConnName>,
     Data(state): Data<&Arc<crate::State>>,

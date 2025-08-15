@@ -7,6 +7,7 @@ const NO_CONTENT = 204;
 
 export interface RequestOpts {
   headers?: Record<string, string>;
+  signal?: AbortSignal;
 }
 
 const req = (method: string) => {
@@ -23,6 +24,7 @@ const req = (method: string) => {
         "content-type": "application/json",
       },
       body: JSON.stringify(data),
+      signal: opts?.signal,
     });
 
     if (!response.ok) {

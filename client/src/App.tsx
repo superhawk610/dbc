@@ -207,6 +207,8 @@ function App() {
       >
         <Editor
           ref={editorRef}
+          connection={connection}
+          schema={schema}
           onClick={() => {
             const contents = editorRef.current!.getContents();
 
