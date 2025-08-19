@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
 import Connection from "../../models/connection.ts";
-import { get } from "../../api.ts";
+import useConnectionVersion from "../../hooks/useConnectionVersion.ts";
 
 export interface Props {
   connections: Connection[];
@@ -12,17 +11,7 @@ export interface Props {
 export default function ConnectionSelect(
   { connections, selected, onSelect, onManageConnections }: Props,
 ) {
-  const [connectionInfo, setConnectionInfo] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!selected) return;
-
-    (async () => {
-      const { info } = await get<{ info: string }>(`/connections/${selected}`);
-      const [name, version] = info.split(" ", 3);
-      setConnectionInfo(`${name} ${version}`);
-    })();
-  }, [selected]);
+  const connectionInfo = useConnectionVersion(selected);
 
   return (
     <select

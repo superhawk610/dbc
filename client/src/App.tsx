@@ -5,7 +5,7 @@ import {
 } from "react-icons/hi";
 import { get, paginatedQuery, rawQuery } from "./api.ts";
 
-import useResize from "./hooks/useResize.tsx";
+import useResize from "./hooks/useResize.ts";
 import Navbar from "./components/Navbar.tsx";
 import Editor, { EditorRef } from "./components/Editor.tsx";
 import ConnectionSelect from "./components/editor/ConnectionSelect.tsx";
@@ -20,6 +20,7 @@ import Database from "./models/database.ts";
 import Schema from "./models/schema.ts";
 import Table from "./models/table.ts";
 import SettingsModal from "./components/SettingsModal.tsx";
+import useConnectionVersion from "./hooks/useConnectionVersion.ts";
 
 const EDITOR_HEIGHT = { min: 100, default: 400 };
 
@@ -63,6 +64,8 @@ function App() {
     minHeight: EDITOR_HEIGHT.min,
     defaultHeight: EDITOR_HEIGHT.default,
   });
+
+  const version = useConnectionVersion(connection);
 
   useEffect(() => {
     (async () => {
@@ -218,49 +221,60 @@ function App() {
           }}
           onClickLabel="Query ⌘⏎"
           sidebar={
-            <div className="w-[300px] overflow-auto">
+            <div className="w-[300px] flex flex-col">
               <h1 className="mb-0 px-4 divider divider-start text-xs text-base-content/80 uppercase">
                 tables
               </h1>
-              <ul className="menu w-full">
-                {!tables
-                  ? (
-                    <li className="p-4">
-                      <span className="loading loading-infinity loading-xl" />
-                    </li>
-                  )
-                  : tables.map((row) => (
-                    <li key={row["table_name"] as string}>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          const res = await get<{ ddl: string }>(
-                            `/db/ddl/schemas/${schema}/tables/${
-                              row["table_name"]
-                            }`,
-                            undefined,
-                            { headers: { "x-conn-name": connection! } },
-                          );
 
-                          // insert text into editor
-                          // editorRef.current!.insert(row[2]);
-                          // editorRef.current!.focus();
+              <div className="flex-1 overflow-auto">
+                <ul className="menu w-full">
+                  {!tables
+                    ? (
+                      <li className="p-4">
+                        <span className="loading loading-infinity loading-xl" />
+                      </li>
+                    )
+                    : tables.map((row) => (
+                      <li key={row["table_name"] as string}>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const res = await get<{ ddl: string }>(
+                              `/db/ddl/schemas/${schema}/tables/${
+                                row["table_name"]
+                              }`,
+                              undefined,
+                              { headers: { "x-conn-name": connection! } },
+                            );
 
-                          // open new editor tab
-                          editorRef.current!.openTab({
-                            id: `dbc://table/${row["table_name"]}`,
-                            name: `Table / ${row["table_name"]}`,
-                            language: "sql",
-                            contents: res.ddl,
-                            icon: "database",
-                          });
-                        }}
-                      >
-                        {row["table_name"]}
-                      </button>
-                    </li>
-                  ))}
-              </ul>
+                            // insert text into editor
+                            // editorRef.current!.insert(row[2]);
+                            // editorRef.current!.focus();
+
+                            // open new editor tab
+                            editorRef.current!.openTab({
+                              id: `dbc://table/${row["table_name"]}`,
+                              name: `Table / ${row["table_name"]}`,
+                              language: "sql",
+                              contents: res.ddl,
+                              icon: "database",
+                            });
+                          }}
+                        >
+                          {row["table_name"]}
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              </div>
+
+              {version && (
+                <div className="p-4">
+                  <div className="badge badge-xs badge-success">
+                    Connected: {version}
+                  </div>
+                </div>
+              )}
             </div>
           }
           toolbar={
