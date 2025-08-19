@@ -200,6 +200,21 @@ function App() {
     dispatchQuery(query, page, pageSize);
   }, [query, page, pageSize]);
 
+  function submitQuery() {
+    const contents = editorRef.current!.getContents();
+
+    // store the query in local storage to be restored on page reload
+    editorRef.current!.saveTabs();
+
+    // if the query hasn't changed, just show results
+    const newQuery = editorRef.current!.getActiveQuery() || contents;
+    if (newQuery !== query) {
+      setQuery(newQuery);
+    } else {
+      setShowResults(true);
+    }
+  }
+
   function handleSave(updatedConnections: Connection[]) {
     setConnections(updatedConnections);
 
@@ -248,20 +263,7 @@ function App() {
           connection={connection?.name}
           database={database}
           schema={schema}
-          onClick={() => {
-            const contents = editorRef.current!.getContents();
-
-            // store the query in local storage to be restored on page reload
-            editorRef.current!.saveTabs();
-
-            // if the query hasn't changed, just show results
-            const newQuery = editorRef.current!.getActiveQuery() || contents;
-            if (newQuery !== query) {
-              setQuery(newQuery);
-            } else {
-              setShowResults(true);
-            }
-          }}
+          onClick={submitQuery}
           onClickLabel="Query ⌘⏎"
           sidebar={
             <div className="w-[300px] flex flex-col">
@@ -320,7 +322,7 @@ function App() {
 
               {version && (
                 <div className="px-4 py-2 bg-neutral/20">
-                  <div className="block badge badge-xs badge-primary">
+                  <div className="block badge badge-xs badge-primary select-none">
                     Connected: {version}
                   </div>
                 </div>
@@ -372,7 +374,27 @@ function App() {
             className="bg-base-content/10 h-1 cursor-ns-resize z-[10]"
           />
 
-          <QueryResults page={res} error={error} />
+          <QueryResults
+            page={res}
+            error={error}
+            onForeignKeyClick={(column, value) => {
+              n += 1;
+              editorRef.current!.openTab({
+                id: `dbc://query/${n}`,
+                name: `Query / Script ${n}`,
+                language: "sql",
+                contents:
+                  `SELECT * FROM ${column.fk_table} WHERE ${column.fk_column} = ${
+                    JSON.stringify(value)
+                  };`,
+                icon: "database",
+              });
+
+              // open new tab and submit query
+              // setTimeout(() => submitQuery(), 0);
+            }}
+          />
+
           {res && (
             <Pagination
               query={res}

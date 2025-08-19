@@ -353,8 +353,9 @@ export default forwardRef(
       // update saved tabs
       globalThis.localStorage.setItem(SAVED_TABS, JSON.stringify(newTabs));
 
-      // close monaco's underlying model
-      monacoRef.current!.monaco.editor.getModel(Uri.parse(id))!.dispose();
+      // close monaco's underlying model (it may not have been opened yet
+      // if the tab was restored from a previous session)
+      monacoRef.current!.monaco.editor.getModel(Uri.parse(id))?.dispose();
 
       if (idx < activeTabIndex) {
         // if we closed a tab to the left, decrement the active index

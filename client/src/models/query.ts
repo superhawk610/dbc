@@ -7,6 +7,11 @@ export type QueryValue = string | number | boolean | null | QueryValue[];
 export interface QueryColumn {
   type: string;
   name: string;
+  source_table: string | null;
+  source_column: string | null;
+  fk_constraint: string | null;
+  fk_table: string | null;
+  fk_column: string | null;
 }
 
 export interface QueryResult {
