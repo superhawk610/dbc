@@ -4,6 +4,7 @@ export default interface Connection {
   port: number;
   username: string;
   password: string;
+  password_file: string;
   database: string;
   ssl: boolean;
 }

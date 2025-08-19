@@ -43,13 +43,23 @@ impl State {
 
         // if not, spawn a new connection pool
         let config = self.config.read().await;
-        let connection = config
+        let mut connection = config
             .connections
             .iter()
             .find(|c| c.name == conn_name)
             .cloned()
             .ok_or(eyre::eyre!("no connection named {conn_name}"))?;
         drop(config);
+
+        // load password (run `password_file` if required)
+        if let Some(p) = connection.password_file.as_ref() {
+            self.broadcast(format!("Fetching password via \"{}\":\n", p))
+                .await;
+        }
+        let stderr = connection.load_password().await;
+        if let Some(stderr) = stderr {
+            self.broadcast(stderr).await;
+        }
 
         let cfg = crate::db::Config::from(&connection);
         match crate::pool::ConnectionPool::new(cfg).await {

@@ -53,13 +53,18 @@ function SettingsModalBody({ actions, onSave }: SettingsModalBodyProps) {
       port: Number(form.get("port") || "5432"),
       username: form.get("username") as string,
       password: form.get("password") as string,
+      password_file: form.get("password_file") as string,
       database: form.get("database") as string || "postgres",
       // FIXME: allow selecting
       ssl: false,
     };
 
-    if (!conn.name || !conn.username || !conn.password) {
-      alert("Name, username, and password are required.");
+    if (
+      !conn.name ||
+      !conn.username ||
+      (!conn.password && !conn.password_file)
+    ) {
+      alert("Name, username, and password/password file are required.");
       return;
     }
 
@@ -138,6 +143,11 @@ function SettingsModalBody({ actions, onSave }: SettingsModalBodyProps) {
           />
           <Field name="username" defaultValue={connection?.username} />
           <Field name="password" defaultValue={connection?.password} />
+          <Field
+            name="password_file"
+            label="Password File"
+            defaultValue={connection?.password_file}
+          />
           <Field
             name="database"
             defaultValue={connection?.database}

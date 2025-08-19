@@ -35,7 +35,7 @@ fn encryption_key() -> &'static Key<Aes256Gcm> {
     ENCRYPTION_KEY.get().unwrap()
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct Store {
     pub connections: Vec<Connection>,
 }
@@ -46,59 +46,69 @@ pub struct Connection {
     pub host: String,
     pub port: usize,
     pub username: String,
-    pub password: EncryptedString,
+    /// The plain-text password to use when connecting.
+    pub password: Option<String>,
+    /// A path to an executable file to run to generate the password to use when connecting.
+    /// Any text printed to `stdout` by this executable will be included.
+    pub password_file: Option<String>,
     pub database: String,
     #[serde(default)]
     pub ssl: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DecryptedConnection {
-    pub name: String,
-    pub host: String,
-    pub port: usize,
-    pub username: String,
-    pub password: String,
-    pub database: String,
-    #[serde(default)]
-    pub ssl: bool,
-}
+impl Connection {
+    /// If `password_file` is set, runs the given executable and places the output
+    /// in `password`. If a password is already set (or if this function has already
+    /// been run before), does nothing.
+    ///
+    /// # Panics
+    ///
+    /// Panics if neither `password` nor `password_file` is set.
+    pub async fn load_password(&mut self) -> Option<String> {
+        if let Some(bin) = self.password_file.as_ref() {
+            let output = tokio::process::Command::new(bin)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .expect("valid executable file")
+                .wait_with_output()
+                .await
+                .expect("executed successfully");
 
-impl From<DecryptedConnection> for Connection {
-    fn from(conn: DecryptedConnection) -> Self {
-        Self {
-            name: conn.name,
-            host: conn.host,
-            port: conn.port,
-            username: conn.username,
-            password: EncryptedString(conn.password),
-            database: conn.database,
-            ssl: conn.ssl,
-        }
-    }
-}
+            self.password = Some(
+                String::from_utf8(output.stdout)
+                    .expect("valid utf-8")
+                    .trim()
+                    .to_owned(),
+            );
 
-impl From<&Connection> for DecryptedConnection {
-    fn from(conn: &Connection) -> Self {
-        Self {
-            name: conn.name.clone(),
-            host: conn.host.clone(),
-            port: conn.port,
-            username: conn.username.clone(),
-            password: conn.password.0.clone(),
-            database: conn.database.clone(),
-            ssl: conn.ssl,
+            dbg!(&self);
+
+            // FIXME: streaming real-time output
+            return String::from_utf8(output.stderr).ok();
+        } else if self.password.is_none() {
+            panic!(
+                "{}: either `password` or `password_file` must be set",
+                self.name
+            );
         }
+
+        None
     }
 }
 
 impl From<&Connection> for crate::db::Config {
     fn from(conn: &Connection) -> Self {
+        let password = conn
+            .password
+            .as_ref()
+            .expect("`load_password` has been called");
+
         crate::db::Config::builder()
             .host(conn.host.clone())
             .port(conn.port)
             .username(conn.username.clone())
-            .password(conn.password.0.clone())
+            .password(password.clone())
             .database(conn.database.clone())
             .ssl(conn.ssl)
             .build()
@@ -108,7 +118,18 @@ impl From<&Connection> for crate::db::Config {
 impl Store {
     pub fn load() -> eyre::Result<Self> {
         match std::fs::read_to_string(crate::config_dir().join(STORE_FILE)) {
-            Ok(toml_str) => Ok(toml::from_str(&toml_str)?),
+            Ok(toml_str) => {
+                let mut store: Self = toml::from_str(&toml_str)?;
+
+                // decrypt passwords
+                for conn in store.connections.iter_mut() {
+                    if let Some(p) = conn.password.as_mut() {
+                        *p = EncryptedString::load(&p).expect("valid encoded string").0;
+                    }
+                }
+
+                Ok(store)
+            }
             Err(_) => {
                 tracing::info!("could not find store, creating new...");
                 let store = Store::default();
@@ -119,7 +140,15 @@ impl Store {
     }
 
     pub fn persist(&self) -> eyre::Result<()> {
-        let toml_str = toml::to_string_pretty(self)?;
+        // encrypt passwords
+        let mut this = self.clone();
+        for conn in this.connections.iter_mut() {
+            if let Some(p) = conn.password.as_mut() {
+                *p = EncryptedString(p.clone()).dump();
+            }
+        }
+
+        let toml_str = toml::to_string_pretty(&this)?;
         std::fs::write(crate::config_dir().join(STORE_FILE), toml_str.as_bytes())?;
         Ok(())
     }

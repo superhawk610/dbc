@@ -98,14 +98,12 @@ pub async fn websocket(
 #[poem::handler]
 pub async fn get_config(Data(state): Data<&Arc<crate::State>>) -> Json<serde_json::Value> {
     let config = state.config.read().await;
-    Json(serde_json::json!({
-        "connections": config.connections.iter().map(crate::persistence::DecryptedConnection::from).collect::<Vec<_>>(),
-    }))
+    Json(serde_json::json!({ "connections": config.connections }))
 }
 
 #[derive(Debug, serde::Deserialize)]
 struct UpdateConfig {
-    pub connections: Vec<crate::persistence::DecryptedConnection>,
+    pub connections: Vec<crate::persistence::Connection>,
 }
 
 #[poem::handler]
