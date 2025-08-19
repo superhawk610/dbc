@@ -11,20 +11,52 @@ pub mod pool;
 pub mod server;
 pub mod stream;
 
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct ConnectionKey {
+    connection: String,
+    database: String,
+}
+
 pub struct State {
-    pub pools: RwLock<HashMap<String, pool::ConnectionPool>>,
+    pub pools: RwLock<HashMap<ConnectionKey, pool::ConnectionPool>>,
     pub config: RwLock<persistence::Store>,
     pub worker: Mutex<stream::StreamWorker>,
 }
 
 impl State {
+    /// Check out a database connection for the default database of the given connection.
+    pub async fn get_default_conn(
+        &self,
+        connection: String,
+    ) -> eyre::Result<pool::CheckedOutConnection> {
+        let config = self.config.read().await;
+        let conn = config
+            .connections
+            .iter()
+            .find(|c| c.name == connection)
+            .ok_or(eyre::eyre!("no connection named {}", connection))?;
+        let database = conn.database.clone();
+        drop(config);
+
+        self.get_conn(connection, database).await
+    }
+
     /// Check out a database connection from the pool for the given connection name.
     /// If this is the first time this has been called for that connection, this will
     /// spawn the connection pool first.
-    pub async fn get_conn(&self, conn_name: &str) -> eyre::Result<pool::CheckedOutConnection> {
+    pub async fn get_conn(
+        &self,
+        connection: String,
+        database: String,
+    ) -> eyre::Result<pool::CheckedOutConnection> {
+        let conn_key = ConnectionKey {
+            connection,
+            database,
+        };
+
         // use an existing connection pool if one already exists
         let pools = self.pools.read().await;
-        if let Some(pool) = pools.get(conn_name) {
+        if let Some(pool) = pools.get(&conn_key) {
             return pool.get_conn().await;
         }
         drop(pools);
@@ -33,26 +65,29 @@ impl State {
         // the lock, since another thread may have also been waiting and initialized
         // the connection pool before us
         let mut pools = self.pools.write().await;
-        if let Some(pool) = pools.get(conn_name) {
+        if let Some(pool) = pools.get(&conn_key) {
             return pool.get_conn().await;
         }
 
-        tracing::info!("spawning new connection pool for \"{conn_name}\"");
-        self.broadcast(format!("Opening connection pool for \"{conn_name}\"..."))
-            .await;
+        let msg = format!(
+            "Opening connection pool for db \"{}\" on conn \"{}\"...",
+            conn_key.database, conn_key.connection
+        );
+        tracing::info!("{msg}");
+        self.broadcast(msg).await;
 
         // if not, spawn a new connection pool
         let config = self.config.read().await;
         let mut connection = config
             .connections
             .iter()
-            .find(|c| c.name == conn_name)
+            .find(|c| c.name == conn_key.connection)
             .cloned()
-            .ok_or(eyre::eyre!("no connection named {conn_name}"))?;
+            .ok_or(eyre::eyre!("no connection named {}", conn_key.connection))?;
         drop(config);
 
         // load password (run `password_file` if required)
-        if let Some(p) = connection.password_file.as_ref() {
+        if let Some(p) = connection.password_file() {
             self.broadcast(format!("Fetching password via \"{}\":\n", p))
                 .await;
         }
@@ -73,7 +108,7 @@ impl State {
                 let version_info = crate::db::version_info(&conn).await?;
                 self.broadcast(version_info).await;
 
-                let entry = pools.entry(conn_name.to_owned()).insert_entry(pool);
+                let entry = pools.entry(conn_key).insert_entry(pool);
                 entry.get().get_conn().await
             }
 
@@ -100,7 +135,9 @@ impl State {
         let mut counts = Vec::new();
         for (conn, pool) in pools.iter() {
             counts.push(format!(
-                "=== connection: \"{conn}\" ===\n{}",
+                "=== connection: \"{}\" on \"{}\" ===\n{}",
+                conn.database,
+                conn.connection,
                 pool.debug().await
             ));
         }

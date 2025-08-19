@@ -3,14 +3,14 @@ use poem::{
     IntoResponse,
     web::{
         Data, Json, Path, TypedHeader,
-        headers::{Header, HeaderName, HeaderValue},
         websocket::{Message, WebSocket},
     },
 };
 use serde::Deserialize;
-use std::{ops::Deref, sync::Arc};
+use std::{collections::HashSet, sync::Arc};
 
 pub mod debug;
+pub mod headers;
 
 pub async fn format_eyre<E: poem::Endpoint>(
     next: E,
@@ -25,43 +25,6 @@ pub async fn format_eyre<E: poem::Endpoint>(
     }
 
     Ok(res)
-}
-
-struct XConnName(String);
-
-static X_CONN_NAME: HeaderName = HeaderName::from_static("x-conn-name");
-
-impl Header for XConnName {
-    fn name() -> &'static HeaderName {
-        &X_CONN_NAME
-    }
-
-    fn decode<'i, I>(values: &mut I) -> Result<Self, poem::web::headers::Error>
-    where
-        Self: Sized,
-        I: Iterator<Item = &'i HeaderValue>,
-    {
-        Ok(Self(
-            values
-                .next()
-                .ok_or(poem::web::headers::Error::invalid())?
-                .to_str()
-                .map_err(|_| poem::web::headers::Error::invalid())?
-                .to_owned(),
-        ))
-    }
-
-    fn encode<E: Extend<HeaderValue>>(&self, _values: &mut E) {
-        panic!("not implemented")
-    }
-}
-
-impl Deref for XConnName {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
 }
 
 #[poem::handler]
@@ -125,9 +88,13 @@ pub async fn update_config(
         .await;
 
     let mut pools = state.pools.write().await;
-    let mut close_pools = Vec::new();
-    for (conn_name, pool) in pools.iter_mut() {
-        match config.connections.iter().find(|c| c.name.eq(conn_name)) {
+    let mut close_pools = HashSet::new();
+    for (conn, pool) in pools.iter_mut() {
+        match config
+            .connections
+            .iter()
+            .find(|c| c.name.eq(&conn.connection))
+        {
             // if the connection is still present in the config, reload the pool
             Some(conn) => {
                 if let Err(err) = pool.reload(conn.into()).await {
@@ -136,12 +103,14 @@ pub async fn update_config(
             }
 
             // otherwise, slate for removal
-            None => close_pools.push(conn_name.to_string()),
+            None => {
+                close_pools.insert(conn.connection.clone());
+            }
         }
     }
 
     // close any connection pools that are no longer active
-    pools.retain(|k, _| !close_pools.contains(&k));
+    pools.retain(|k, _| !close_pools.contains(&k.connection));
 
     state.broadcast("Done!").await;
 
@@ -153,36 +122,38 @@ pub async fn connection_info(
     Data(state): Data<&Arc<crate::State>>,
     Path(connection): Path<String>,
 ) -> eyre::Result<Json<serde_json::Value>> {
-    let conn = state.get_conn(&connection).await?;
+    let conn = state.get_default_conn(connection).await?;
     let info = crate::db::version_info(&conn).await?;
     Ok(Json(serde_json::json!({ "info": info })))
 }
 
 #[poem::handler]
 pub async fn get_databases(
-    TypedHeader(conn_name): TypedHeader<XConnName>,
+    TypedHeader(connection): TypedHeader<headers::XConnName>,
     Data(state): Data<&Arc<crate::State>>,
 ) -> eyre::Result<Json<crate::db::QueryRows>> {
-    let conn = state.get_conn(&conn_name).await?;
+    let conn = state.get_default_conn(connection.into()).await?;
     Ok(Json(crate::db::list_databases(&conn).await?.row_maps()))
 }
 
 #[poem::handler]
 pub async fn get_schemas(
-    TypedHeader(conn_name): TypedHeader<XConnName>,
+    TypedHeader(connection): TypedHeader<headers::XConnName>,
+    TypedHeader(database): TypedHeader<headers::XDatabase>,
     Data(state): Data<&Arc<crate::State>>,
 ) -> eyre::Result<Json<crate::db::QueryRows>> {
-    let conn = state.get_conn(&conn_name).await?;
+    let conn = state.get_conn(connection.into(), database.into()).await?;
     Ok(Json(crate::db::list_schemas(&conn).await?.row_maps()))
 }
 
 #[poem::handler]
 pub async fn get_tables(
-    TypedHeader(conn_name): TypedHeader<XConnName>,
+    TypedHeader(connection): TypedHeader<headers::XConnName>,
+    TypedHeader(database): TypedHeader<headers::XDatabase>,
     Data(state): Data<&Arc<crate::State>>,
     Path(schema): Path<String>,
 ) -> eyre::Result<Json<crate::db::QueryRows>> {
-    let conn = state.get_conn(&conn_name).await?;
+    let conn = state.get_conn(connection.into(), database.into()).await?;
     Ok(Json(
         crate::db::list_tables(&conn, &schema).await?.row_maps(),
     ))
@@ -190,11 +161,12 @@ pub async fn get_tables(
 
 #[poem::handler]
 pub async fn get_columns(
-    TypedHeader(conn_name): TypedHeader<XConnName>,
+    TypedHeader(connection): TypedHeader<headers::XConnName>,
+    TypedHeader(database): TypedHeader<headers::XDatabase>,
     Data(state): Data<&Arc<crate::State>>,
     Path((schema, table)): Path<(String, String)>,
 ) -> eyre::Result<Json<Vec<String>>> {
-    let conn = state.get_conn(&conn_name).await?;
+    let conn = state.get_conn(connection.into(), database.into()).await?;
     Ok(Json(
         crate::db::list_columns(&conn, &schema, &table)
             .await?
@@ -207,11 +179,12 @@ pub async fn get_columns(
 
 #[poem::handler]
 pub async fn get_table_ddl(
-    TypedHeader(conn_name): TypedHeader<XConnName>,
+    TypedHeader(connection): TypedHeader<headers::XConnName>,
+    TypedHeader(database): TypedHeader<headers::XDatabase>,
     Data(state): Data<&Arc<crate::State>>,
     Path((schema, table)): Path<(String, String)>,
 ) -> eyre::Result<Json<serde_json::Value>> {
-    let conn = state.get_conn(&conn_name).await?;
+    let conn = state.get_conn(connection.into(), database.into()).await?;
     let ddl = crate::db::table_ddl(&conn, &schema, &table).await?;
     Ok(Json(serde_json::json!({ "ddl": ddl })))
 }
@@ -225,11 +198,12 @@ struct QueryParams {
 
 #[poem::handler]
 pub async fn handle_query(
-    TypedHeader(conn_name): TypedHeader<XConnName>,
+    TypedHeader(connection): TypedHeader<headers::XConnName>,
+    TypedHeader(database): TypedHeader<headers::XDatabase>,
     Data(state): Data<&Arc<crate::State>>,
     Json(params): Json<QueryParams>,
 ) -> eyre::Result<Json<crate::db::PaginatedQueryResult>> {
-    let conn = state.get_conn(&conn_name).await?;
+    let conn = state.get_conn(connection.into(), database.into()).await?;
     Ok(Json(
         crate::db::paginated_query(&conn, &params.query, &[], params.page, params.page_size)
             .await?,

@@ -23,9 +23,9 @@ export default function QueryResults({ page, error }: Props) {
       <table className="table table-sm table-zebra table-pin-rows table-compact rounded-none bg-base-100 whitespace-nowrap">
         <thead>
           <tr>
-            {page.entries.columns.map((column) => (
+            {page.entries.columns.map((column, idx) => (
               <th
-                key={column.name}
+                key={`${column.name}-${idx}`}
                 className="bg-neutral/70 text-neutral-content font-semibold"
               >
                 {column.name}
@@ -59,8 +59,12 @@ export default function QueryResults({ page, error }: Props) {
                           &lt;null&gt;
                         </span>
                       )
-                      : Array.isArray(value)
-                      ? JSON.stringify(value)
+                      : (Array.isArray(value) || typeof value === "object")
+                      ? (
+                        <span className="font-mono">
+                          {JSON.stringify(value, null, 2)}
+                        </span>
+                      )
                       : value}
                   </td>
                 ))}

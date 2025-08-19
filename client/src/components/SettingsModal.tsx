@@ -52,8 +52,8 @@ function SettingsModalBody({ actions, onSave }: SettingsModalBodyProps) {
       host: form.get("host") as string || "localhost",
       port: Number(form.get("port") || "5432"),
       username: form.get("username") as string,
-      password: form.get("password") as string,
-      password_file: form.get("password_file") as string,
+      password: form.get("password") as string || null,
+      password_file: form.get("password_file") as string || null,
       database: form.get("database") as string || "postgres",
       // FIXME: allow selecting
       ssl: false,

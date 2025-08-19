@@ -65,7 +65,7 @@ impl Connection {
     ///
     /// Panics if neither `password` nor `password_file` is set.
     pub async fn load_password(&mut self) -> Option<String> {
-        if let Some(bin) = self.password_file.as_ref() {
+        if let Some(bin) = self.password_file() {
             let output = tokio::process::Command::new(bin)
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
@@ -94,6 +94,10 @@ impl Connection {
         }
 
         None
+    }
+
+    pub fn password_file(&self) -> Option<&String> {
+        self.password_file.as_ref().filter(|s| !s.is_empty())
     }
 }
 

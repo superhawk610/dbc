@@ -9,7 +9,8 @@ import { get } from "./api.ts";
 import Table from "./models/table.ts";
 
 export interface DbcCompletionProviderContext {
-  connection: string | null;
+  connection: string | null | undefined;
+  database: string | null;
   schema: string | null;
 }
 
@@ -54,7 +55,11 @@ export default class DbcCompletionProvider
     }
 
     // an active connection/schema are required to provide suggestions
-    if (!this.context.connection || !this.context.schema) return completion;
+    if (
+      !this.context.connection ||
+      !this.context.database ||
+      !this.context.schema
+    ) return completion;
 
     switch (context.triggerCharacter) {
       // if prior token was `from` or `join`, list tables
@@ -87,7 +92,10 @@ export default class DbcCompletionProvider
             undefined,
             {
               signal: abort.signal,
-              headers: { "x-conn-name": this.context.connection },
+              headers: {
+                "x-conn-name": this.context.connection,
+                "x-database": this.context.database,
+              },
             },
           );
 

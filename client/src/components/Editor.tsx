@@ -21,7 +21,6 @@ import {
 import DbcCompletionProvider, {
   DbcCompletionProviderContext,
 } from "../CompletionProvider.ts";
-import { t } from "../../dist/assets/index-DTHnZ14c.js";
 
 const OWNER = "dbc";
 export const SAVED_TABS = "savedTabs";
@@ -167,7 +166,8 @@ export interface Props {
   onClickLabel?: string;
   sidebar?: React.ReactNode;
   toolbar?: React.ReactNode;
-  connection: string | null;
+  connection: string | null | undefined;
+  database: string | null;
   schema: string | null;
 }
 
@@ -192,7 +192,8 @@ export interface EditorRef {
 
 export default forwardRef(
   function Editor(
-    { onClick, onClickLabel, sidebar, toolbar, connection, schema }: Props,
+    { onClick, onClickLabel, sidebar, toolbar, connection, database, schema }:
+      Props,
     ref,
   ) {
     const [tabs, setTabs] = useState<EditorTab[]>(() => {
@@ -216,14 +217,16 @@ export default forwardRef(
 
     const providerContextRef = useRef<DbcCompletionProviderContext>({
       connection,
+      database,
       schema,
     });
 
     // keep provider context in sync with editor
     useEffect(() => {
       providerContextRef.current.connection = connection;
+      providerContextRef.current.database = database;
       providerContextRef.current.schema = schema;
-    }, [connection, schema]);
+    }, [connection, database, schema]);
 
     useImperativeHandle(ref, () => ({
       getContents: () => monacoRef.current.editor.getValue(),
@@ -319,6 +322,7 @@ export default forwardRef(
             monacoRef.current!.monaco.KeyCode.Enter,
           ],
           contextMenuGroupId: "2_commands",
+          // TODO: this callback changes with hot reloads
           run: () => onClick?.(),
         });
       }

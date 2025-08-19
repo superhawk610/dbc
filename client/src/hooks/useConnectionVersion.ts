@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { get } from "../api.ts";
 
-export default function useConnectionVersion(connection: string | null) {
+export default function useConnectionVersion(
+  connection: string | null | undefined,
+) {
   const [connectionInfo, setConnectionInfo] = useState<string | null>(null);
 
   useEffect(() => {

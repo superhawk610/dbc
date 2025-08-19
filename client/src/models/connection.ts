@@ -3,8 +3,8 @@ export default interface Connection {
   host: string;
   port: number;
   username: string;
-  password: string;
-  password_file: string;
+  password: string | null;
+  password_file: string | null;
   database: string;
   ssl: boolean;
 }

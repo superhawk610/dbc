@@ -3,7 +3,7 @@ import useConnectionVersion from "../../hooks/useConnectionVersion.ts";
 
 export interface Props {
   connections: Connection[];
-  selected: string | null;
+  selected: string | null | undefined;
   onSelect: (name: string) => void;
   onManageConnections: () => void;
 }

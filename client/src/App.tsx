@@ -3,14 +3,16 @@ import {
   HiDocumentAdd as NewTabIcon,
   HiViewList as ListIcon,
 } from "react-icons/hi";
-import { get, paginatedQuery, rawQuery } from "./api.ts";
+import { get, paginatedQuery, rawDefaultQuery, rawQuery } from "./api.ts";
 
 import useResize from "./hooks/useResize.ts";
 import Navbar from "./components/Navbar.tsx";
 import Editor, { EditorRef } from "./components/Editor.tsx";
 import ConnectionSelect from "./components/editor/ConnectionSelect.tsx";
 import DatabaseSelect from "./components/editor/DatabaseSelect.tsx";
-import SchemaSelect from "./components/editor/SchemaSelect.tsx";
+import SchemaSelect, {
+  getLastSchema,
+} from "./components/editor/SchemaSelect.tsx";
 import QueryResults from "./components/QueryResults.tsx";
 import Pagination from "./components/Pagination.tsx";
 import Config from "./models/config.ts";
@@ -44,7 +46,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
 
   const [connections, setConnections] = useState<Connection[] | null>(null);
-  const [connection, setConnection] = useState<string | null>(null);
+  const [connection, setConnection] = useState<Connection | null>(null);
   const [databases, setDatabases] = useState<Database[] | null>(null);
   const [database, setDatabase] = useState<string | null>(null);
   const [schemas, setSchemas] = useState<Schema[] | null>(null);
@@ -65,7 +67,7 @@ function App() {
     defaultHeight: EDITOR_HEIGHT.default,
   });
 
-  const version = useConnectionVersion(connection);
+  const version = useConnectionVersion(connection?.name);
 
   useEffect(() => {
     (async () => {
@@ -74,7 +76,7 @@ function App() {
 
       // select first available connection by default
       if (config.connections.length > 0) {
-        setConnection(config.connections[0].name);
+        setConnection(config.connections[0]);
       }
     })();
   }, []);
@@ -83,33 +85,59 @@ function App() {
     if (!connection) return;
 
     (async () => {
-      const [databases, schemas] = await Promise.all([
-        rawQuery<Database[]>(connection, "/db/databases"),
-        rawQuery<Schema[]>(connection, "/db/schemas"),
-      ]);
-
+      const databases = await rawDefaultQuery<Database[]>(
+        connection.name,
+        "/db/databases",
+      );
       setDatabases(databases);
-      setSchemas(schemas);
 
-      // select first available database by default
-      if (databases.length > 0) setDatabase(databases[0].datname);
-
-      // select first available schema by default
-      if (schemas.length > 0) setSchema(schemas[0].schema_name);
+      // select configured database by default, or `postgres` if none configured,
+      // or finally the first available if neither of those are available
+      if (databases.length > 0) {
+        setDatabase(
+          databases.find((d) => d.datname === connection.database)?.datname ||
+            databases.find((d) => d.datname === "postgres")?.datname ||
+            databases[0].datname,
+        );
+      }
     })();
   }, [connection]);
 
   useEffect(() => {
-    if (!connection || !schema) return;
+    if (!connection || !database) return;
+
+    (async () => {
+      const schemas = await rawQuery<Schema[]>(
+        connection.name,
+        database,
+        "/db/schemas",
+      );
+      setSchemas(schemas);
+
+      // select last used schema by default, or try the `public` schema (as that's usually
+      // the default), or finally the first available if neither of those are available
+      if (schemas.length > 0) {
+        setSchema(
+          getLastSchema(connection.name, database) ||
+            schemas.find((s) => s.schema_name === "public")?.schema_name ||
+            schemas[0].schema_name,
+        );
+      }
+    })();
+  }, [connection, database]);
+
+  useEffect(() => {
+    if (!connection || !database || !schema) return;
 
     (async () => {
       const tables = await rawQuery<Table[]>(
-        connection,
+        connection.name,
+        database,
         `/db/schemas/${schema}/tables`,
       );
       setTables(tables);
     })();
-  }, [schema]);
+  }, [connection, database, schema]);
 
   async function dispatchQuery(query: string, page: number, pageSize: number) {
     // show results pane
@@ -119,14 +147,22 @@ function App() {
     editorRef.current!.clearErrors();
 
     try {
-      const res = await paginatedQuery(connection!, query, page, pageSize);
+      const res = await paginatedQuery(
+        connection!.name,
+        database!,
+        query,
+        page,
+        pageSize,
+      );
+
       setError(null);
       setRes(res);
 
       // if the statement contained DDL, refresh the table view
       if (res.entries.is_ddl) {
         const tables = await rawQuery<Table[]>(
-          connection!,
+          connection!.name,
+          database!,
           `/db/schemas/${schema}/tables`,
         );
         setTables(tables);
@@ -168,11 +204,11 @@ function App() {
     setConnections(updatedConnections);
 
     // as long as the existing connection is still present, we're done
-    if (updatedConnections.find((c) => c.name === connection)) return;
+    if (updatedConnections.find((c) => c.name === connection?.name)) return;
 
     // if the existing connection no longer exists, default to the first
     setConnection(
-      updatedConnections.length > 0 ? updatedConnections[0].name : null,
+      updatedConnections.length > 0 ? updatedConnections[0] : null,
     );
   }
 
@@ -209,7 +245,8 @@ function App() {
       >
         <Editor
           ref={editorRef}
-          connection={connection}
+          connection={connection?.name}
+          database={database}
           schema={schema}
           onClick={() => {
             const contents = editorRef.current!.getContents();
@@ -217,17 +254,23 @@ function App() {
             // store the query in local storage to be restored on page reload
             editorRef.current!.saveTabs();
 
-            setQuery(editorRef.current!.getActiveQuery() || contents);
+            // if the query hasn't changed, just show results
+            const newQuery = editorRef.current!.getActiveQuery() || contents;
+            if (newQuery !== query) {
+              setQuery(newQuery);
+            } else {
+              setShowResults(true);
+            }
           }}
           onClickLabel="Query ⌘⏎"
           sidebar={
             <div className="w-[300px] flex flex-col">
-              <h1 className="mb-0 px-4 divider divider-start text-xs text-base-content/80 uppercase">
+              <h1 className="mb-1 px-4 divider divider-start text-xs text-base-content/80 uppercase">
                 tables
               </h1>
 
-              <div className="flex-1 overflow-auto">
-                <ul className="menu w-full">
+              <div className="flex-grow basis-0 overflow-y-auto overflow-x-hidden">
+                <ul className="w-full menu text-xs">
                   {!tables
                     ? (
                       <li className="p-4">
@@ -235,16 +278,23 @@ function App() {
                       </li>
                     )
                     : tables.map((row) => (
-                      <li key={row["table_name"] as string}>
+                      <li key={row["table_name"] as string} className="w-full">
                         <button
                           type="button"
+                          title={row["table_name"] as string}
+                          className="block w-full overflow-hidden truncate"
                           onClick={async () => {
                             const res = await get<{ ddl: string }>(
                               `/db/ddl/schemas/${schema}/tables/${
                                 row["table_name"]
                               }`,
                               undefined,
-                              { headers: { "x-conn-name": connection! } },
+                              {
+                                headers: {
+                                  "x-conn-name": connection!.name,
+                                  "x-database": database!,
+                                },
+                              },
                             );
 
                             // insert text into editor
@@ -269,8 +319,8 @@ function App() {
               </div>
 
               {version && (
-                <div className="p-4">
-                  <div className="badge badge-xs badge-success">
+                <div className="px-4 py-2 bg-neutral/20">
+                  <div className="block badge badge-xs badge-primary">
                     Connected: {version}
                   </div>
                 </div>
@@ -282,8 +332,9 @@ function App() {
               {connections && (
                 <ConnectionSelect
                   connections={connections}
-                  selected={connection}
-                  onSelect={setConnection}
+                  selected={connection?.name}
+                  onSelect={(name) =>
+                    setConnection(connections.find((c) => c.name === name)!)}
                   onManageConnections={() => setSettingsModalsActive(true)}
                 />
               )}
@@ -296,6 +347,8 @@ function App() {
               )}
               {schemas && (
                 <SchemaSelect
+                  connection={connection?.name}
+                  database={database}
                   schemas={schemas}
                   selected={schema}
                   onSelect={setSchema}

@@ -39,17 +39,27 @@ const req = (method: string) => {
   };
 };
 
-export const rawQuery = <T>(connection: string, path: string) =>
+export const rawDefaultQuery = <T>(connection: string, path: string) =>
   get<T>(path, undefined, { headers: { "x-conn-name": connection } });
+
+export const rawQuery = <T>(
+  connection: string,
+  database: string,
+  path: string,
+) =>
+  get<T>(path, undefined, {
+    headers: { "x-conn-name": connection, "x-database": database },
+  });
 
 export const paginatedQuery = (
   connection: string,
+  database: string,
   query: string,
   page: number,
   pageSize: number,
 ) =>
   post<PaginatedQueryResult>("/query", { query, page, page_size: pageSize }, {
-    headers: { "x-conn-name": connection },
+    headers: { "x-conn-name": connection, "x-database": database },
   });
 
 export const get = req("GET");

@@ -83,7 +83,7 @@ impl WebView {
         });
 
         let _menu = if cfg!(target_os = "macos") {
-            use muda::{AboutMetadataBuilder, Menu, MenuItem, PredefinedMenuItem, Submenu};
+            use muda::{AboutMetadataBuilder, Menu, PredefinedMenuItem, Submenu};
 
             let menu = Menu::with_items(&[
                 &Submenu::with_items(

@@ -1,7 +1,7 @@
 use native_tls::TlsConnector;
 use postgres_native_tls::MakeTlsConnector;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::oneshot::{Receiver, Sender, channel};
 use tokio_postgres::{Socket, types::ToSql};
@@ -170,9 +170,170 @@ impl QueryResult {
 
 #[derive(Debug, Serialize)]
 pub struct QueryResultColumn {
+    #[serde(skip_serializing)]
+    pub table_oid: Option<u32>,
+    #[serde(skip_serializing)]
+    pub column_id: Option<i16>,
+
     pub name: String,
     #[serde(rename = "type")]
     pub type_: String,
+    #[serde(flatten)]
+    pub extended: Option<QueryResultColumnExtended>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct QueryResultColumnExtended {
+    pub source_table: Option<String>,
+    pub source_column: Option<String>,
+    pub fk_constraint: Option<String>,
+    pub fk_table: Option<String>,
+    pub fk_column: Option<String>,
+}
+
+impl QueryResultColumn {
+    /// Fetch additional information about the given set of columns, including the source table
+    /// and column names and FKs. This will be accomplished in a single batch of queries.
+    pub async fn fetch_extended(
+        columns: &mut Vec<Self>,
+        client: &tokio_postgres::Client,
+    ) -> eyre::Result<()> {
+        // this may overfetch a bit when the same column IDs exist across multiple tables,
+        // but this is still better than not filtering by column ID at all
+        let sql = "
+        select
+          n.nspname table_schema,
+          a.attrelid::int table_id,
+          a.attnum::int column_id,
+          c.relname table_name,
+          a.attname column_name
+        from pg_attribute a
+        join pg_class c on a.attrelid = c.oid
+        join pg_namespace n on c.relnamespace = n.oid
+        where a.attrelid = any($1)
+        and a.attnum = any($2)";
+
+        let table_ids = columns
+            .iter()
+            .filter_map(|col| col.table_oid)
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let column_ids = columns
+            .iter()
+            .filter_map(|col| col.column_id)
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        // we won't always have table/column IDs
+        if table_ids.is_empty() || column_ids.is_empty() {
+            return Ok(());
+        }
+
+        let stmt = client.prepare(sql).await?;
+        let rows = raw_query(client, sql, &stmt, &[&table_ids, &column_ids]).await?;
+
+        let attr_lookup: HashMap<(u32, i16), (String, String, String)> =
+            HashMap::from_iter(rows.into_iter().map(|row| {
+                (
+                    (
+                        // table OID
+                        row[1].as_u64().unwrap() as u32,
+                        // column ID
+                        row[2].as_i64().unwrap() as i16,
+                    ),
+                    (
+                        // table schema
+                        row[0].as_str().unwrap().to_owned(),
+                        // table name
+                        row[3].as_str().unwrap().to_owned(),
+                        // column name
+                        row[4].as_str().unwrap().to_owned(),
+                    ),
+                )
+            }));
+
+        let sql = "
+        select
+          tc.constraint_name,
+          kcu.table_name,
+          kcu.column_name,
+          ccu.table_name,
+          ccu.column_name
+        from information_schema.table_constraints tc
+        join information_schema.key_column_usage kcu
+          on tc.constraint_name = kcu.constraint_name
+          and tc.table_schema = kcu.table_schema
+        join information_schema.constraint_column_usage ccu
+          on ccu.constraint_name = tc.constraint_name
+        where tc.constraint_type = 'FOREIGN KEY'
+        and tc.table_schema = any($1)
+        and tc.table_name = any($2)";
+
+        let table_schemas = attr_lookup
+            .iter()
+            .map(|(_, (table_schema, _, _))| table_schema.clone())
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let table_names = attr_lookup
+            .iter()
+            .map(|(_, (_, table_name, _))| table_name.clone())
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        let stmt = client.prepare(sql).await?;
+        let rows = raw_query(client, sql, &stmt, &[&table_schemas, &table_names]).await?;
+
+        let fk_lookup: HashMap<(String, String), (String, String, String)> =
+            HashMap::from_iter(rows.into_iter().map(|row| {
+                (
+                    (
+                        // source table name
+                        row[1].as_str().unwrap().to_owned(),
+                        // source column name
+                        row[2].as_str().unwrap().to_owned(),
+                    ),
+                    (
+                        // constraint name
+                        row[0].as_str().unwrap().to_owned(),
+                        // target table name
+                        row[3].as_str().unwrap().to_owned(),
+                        // target column name
+                        row[4].as_str().unwrap().to_owned(),
+                    ),
+                )
+            }));
+
+        for col in columns.iter_mut() {
+            if let Some(table_id) = col.table_oid
+                && let Some(column_id) = col.column_id
+                && let Some((_, table_name, column_name)) = attr_lookup.get(&(table_id, column_id))
+            {
+                let mut ext = QueryResultColumnExtended {
+                    source_table: Some(table_name.clone()),
+                    source_column: Some(column_name.clone()),
+                    fk_constraint: None,
+                    fk_table: None,
+                    fk_column: None,
+                };
+
+                if let Some((constraint_name, target_table_name, target_column_name)) =
+                    fk_lookup.get(&(table_name.clone(), column_name.clone()))
+                {
+                    ext.fk_constraint = Some(constraint_name.clone());
+                    ext.fk_table = Some(target_table_name.clone());
+                    ext.fk_column = Some(target_column_name.clone());
+                }
+
+                col.extended = Some(ext);
+            }
+        }
+
+        Ok(())
+    }
 }
 
 pub async fn version_info(client: &tokio_postgres::Client) -> eyre::Result<String> {
@@ -308,7 +469,10 @@ pub async fn table_ddl(
                     _ => Some(format!(
                         "({}, {})",
                         prec,
-                        row["numeric_scale"].as_i64().unwrap(),
+                        row["numeric_scale"]
+                            .as_i64()
+                            .map(|n| n.to_string())
+                            .unwrap_or("?".to_string()),
                     )),
                 }
             } else {
@@ -396,17 +560,20 @@ pub async fn paginated_query(
     }
 
     let base_query = indent(&base_query);
-    let count_query = format!("SELECT COUNT(*) FROM (\n{base_query}\n);");
+    let count_query = format!("SELECT COUNT(*) FROM (\n{base_query}\n) _;");
 
     let limit = page_size;
     let offset = (page - 1) * page_size;
-    let page_query = format!("SELECT * FROM (\n{base_query}\n) LIMIT {limit} OFFSET {offset};");
+    let page_query = format!("SELECT * FROM (\n{base_query}\n) _ LIMIT {limit} OFFSET {offset};");
 
-    let (result, count_result) = futures_util::future::try_join(
+    let (mut result, count_result) = futures_util::future::try_join(
         query(client, &page_query, params),
         query(client, &count_query, params),
     )
     .await?;
+
+    // fetch additional information, like source table and column names and FKs
+    QueryResultColumn::fetch_extended(&mut result.columns, client).await?;
 
     let page_count = result.rows.len();
     let total_count = count_result.rows[0][0].as_u64().unwrap() as usize;
@@ -424,40 +591,57 @@ pub async fn paginated_query(
 
 pub async fn query(
     client: &tokio_postgres::Client,
-    raw_query: &str,
+    raw_sql: &str,
     params: &[SqlParam<'_>],
 ) -> eyre::Result<QueryResult> {
-    let query = parse_query(raw_query);
-    let stmt = client.prepare(&query).await.map_err(PgError::from)?;
+    let sql = parse_query(raw_sql);
+    let stmt = client.prepare(&sql).await.map_err(PgError::from)?;
 
     let columns = stmt
         .columns()
         .iter()
         .map(|col| QueryResultColumn {
+            table_oid: col.table_oid(),
+            column_id: col.column_id(),
             name: col.name().to_owned(),
             type_: col.type_().name().to_owned(),
+            extended: None,
         })
         .collect::<Vec<_>>();
 
-    if stmt.columns().iter().all(col_supported) {
-        let rows = client.query(&stmt, params).await.map_err(PgError::from)?;
+    Ok(QueryResult {
+        columns,
+        rows: raw_query(client, &sql, &stmt, params).await?,
+        is_ddl: is_ddl(&sql),
+    })
+}
+
+async fn raw_query(
+    client: &tokio_postgres::Client,
+    query: &str,
+    statement: &tokio_postgres::Statement,
+    params: &[SqlParam<'_>],
+) -> eyre::Result<Vec<Vec<serde_json::Value>>> {
+    if statement.columns().iter().all(col_supported) {
+        let rows = client
+            .query(statement, params)
+            .await
+            .map_err(PgError::from)?;
 
         let mut data_rows: Vec<Vec<serde_json::Value>> = Vec::with_capacity(rows.len());
         for row in rows {
-            let mut data_row: Vec<serde_json::Value> = Vec::with_capacity(columns.len());
-            for col in stmt.columns() {
-                if let Some(val) = to_json(&row, col) {
+            let mut data_row: Vec<serde_json::Value> =
+                Vec::with_capacity(statement.columns().len());
+            // use column index to get value instead of name in case of duplicate column names
+            for (idx, col) in statement.columns().iter().enumerate() {
+                if let Some(val) = to_json(&row, col, idx) {
                     data_row.push(val);
                 }
             }
             data_rows.push(data_row);
         }
 
-        Ok(QueryResult {
-            columns,
-            rows: data_rows,
-            is_ddl: is_ddl(&query),
-        })
+        Ok(data_rows)
     } else {
         // fall back on simple query (uses TEXT instead of BINARY encoding)
         tracing::info!("falling back on TEXT encoding");
@@ -471,9 +655,10 @@ pub async fn query(
                 RowDescription(_) => {}
                 CommandComplete(_) => {}
                 Row(row) => {
-                    let mut data_row: Vec<serde_json::Value> = Vec::with_capacity(columns.len());
-                    for col in stmt.columns() {
-                        data_row.push(row.get(col.name()).into());
+                    let mut data_row: Vec<serde_json::Value> =
+                        Vec::with_capacity(statement.columns().len());
+                    for (idx, _) in statement.columns().iter().enumerate() {
+                        data_row.push(row.get(idx).into());
                     }
                     data_rows.push(data_row);
                 }
@@ -481,11 +666,7 @@ pub async fn query(
             }
         }
 
-        Ok(QueryResult {
-            columns,
-            rows: data_rows,
-            is_ddl: is_ddl(&query),
-        })
+        Ok(data_rows)
     }
 }
 
@@ -636,66 +817,70 @@ fn col_supported(col: &tokio_postgres::Column) -> bool {
     }
 }
 
-fn to_json(row: &tokio_postgres::Row, col: &tokio_postgres::Column) -> Option<serde_json::Value> {
+fn to_json(
+    row: &tokio_postgres::Row,
+    col: &tokio_postgres::Column,
+    idx: usize,
+) -> Option<serde_json::Value> {
     use tokio_postgres::types::Type;
     match *col.type_() {
         Type::TEXT | Type::VARCHAR | Type::NAME | Type::CHAR => {
-            let val: Option<&str> = row.get(col.name());
+            let val: Option<&str> = row.get(idx);
             Some(val.into())
         }
         Type::BOOL => {
-            let val: Option<bool> = row.get(col.name());
+            let val: Option<bool> = row.get(idx);
             Some(val.into())
         }
         Type::INT8 => {
-            let val: Option<i64> = row.get(col.name());
+            let val: Option<i64> = row.get(idx);
             Some(val.into())
         }
         Type::INT4 => {
-            let val: Option<i32> = row.get(col.name());
+            let val: Option<i32> = row.get(idx);
             Some(val.into())
         }
         Type::INT2 => {
-            let val: Option<i16> = row.get(col.name());
+            let val: Option<i16> = row.get(idx);
             Some(val.into())
         }
         Type::FLOAT8 | Type::NUMERIC => {
-            let val: Option<f64> = row.get(col.name());
+            let val: Option<f64> = row.get(idx);
             Some(val.into())
         }
         Type::FLOAT4 => {
-            let val: Option<f32> = row.get(col.name());
+            let val: Option<f32> = row.get(idx);
             Some(val.into())
         }
         Type::JSONB | Type::JSON => {
-            let val: Option<serde_json::Value> = row.get(col.name());
+            let val: Option<serde_json::Value> = row.get(idx);
             Some(val.into())
         }
         Type::DATE => {
             use time::format_description::well_known::Iso8601;
-            let val: Option<time::Date> = row.get(col.name());
+            let val: Option<time::Date> = row.get(idx);
             Some(val.map(|d| d.format(&Iso8601::DATE).unwrap()).into())
         }
         Type::TIME => {
             use time::format_description::well_known::Iso8601;
-            let val: Option<time::Time> = row.get(col.name());
+            let val: Option<time::Time> = row.get(idx);
             Some(val.map(|t| t.format(&Iso8601::TIME).unwrap()).into())
         }
         Type::TIMESTAMP => {
             use time::format_description::well_known::Iso8601;
-            let val: Option<time::PrimitiveDateTime> = row.get(col.name());
+            let val: Option<time::PrimitiveDateTime> = row.get(idx);
             Some(val.map(|t| t.format(&Iso8601::DATE_TIME).unwrap()).into())
         }
         Type::TIMESTAMPTZ => {
             use time::format_description::well_known::Iso8601;
-            let val: Option<time::OffsetDateTime> = row.get(col.name());
+            let val: Option<time::OffsetDateTime> = row.get(idx);
             Some(val.map(|t| t.format(&Iso8601::DEFAULT).unwrap()).into())
         }
         _ => {
             match col.type_().name() {
                 // citext is a case-insensitive text type
                 "citext" => {
-                    let val: Option<&str> = row.get(col.name());
+                    let val: Option<&str> = row.get(idx);
                     Some(val.into())
                 }
                 _ => {

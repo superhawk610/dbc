@@ -2,7 +2,7 @@ export interface Props {
   name: string;
   type?: string;
   label?: string;
-  defaultValue?: string | number;
+  defaultValue?: string | number | null;
 }
 
 function capitalize(str: string) {
@@ -20,7 +20,7 @@ export default function Field(
         placeholder={label}
         className="input input-md w-full"
         name={name}
-        defaultValue={defaultValue}
+        defaultValue={defaultValue || undefined}
       />
     </label>
   );
