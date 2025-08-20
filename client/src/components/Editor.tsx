@@ -22,6 +22,19 @@ import DbcCompletionProvider, {
   DbcCompletionProviderContext,
 } from "../CompletionProvider.ts";
 
+import themeCatppuccinLatte from "../themes/catppuccin-latte.json" with {
+  type: "json",
+};
+import themeCatppuccinFrappe from "../themes/catppuccin-frappe.json" with {
+  type: "json",
+};
+import themeCatppuccinMacchiato from "../themes/catppuccin-macchiato.json" with {
+  type: "json",
+};
+import themeCatppuccinMocha from "../themes/catppuccin-mocha.json" with {
+  type: "json",
+};
+
 const OWNER = "dbc";
 export const SAVED_TABS = "savedTabs";
 
@@ -30,6 +43,23 @@ const THEME_LIST_JSON = "https://unpkg.com/monaco-themes/themes/themelist.json";
 const DEFAULT_THEMES = {
   "vs-dark": "Default (Dark)",
   "vs-light": "Default (Light)",
+};
+
+// vs code themes converted via https://vsctim.vercel.app
+// catppuccin themes from https://github.com/catppuccin/vscode
+const CUSTOM_THEMES = {
+  "catppuccin-latte": "Catppuccin (Latte)",
+  "catppuccin-frappe": "Catppuccin (Frappe)",
+  "catppuccin-macchiato": "Catppuccin (Macchiato)",
+  "catppuccin-mocha": "Catppuccin (Mocha)",
+};
+
+const CUSTOM_THEMES_JSON: Record<string, editorNS.IStandaloneThemeData> = {
+  "catppuccin-latte": themeCatppuccinLatte as editorNS.IStandaloneThemeData,
+  "catppuccin-frappe": themeCatppuccinFrappe as editorNS.IStandaloneThemeData,
+  "catppuccin-macchiato":
+    themeCatppuccinMacchiato as editorNS.IStandaloneThemeData,
+  "catppuccin-mocha": themeCatppuccinMocha as editorNS.IStandaloneThemeData,
 };
 
 const DEFAULT_TAB: EditorTab = {
@@ -60,26 +90,35 @@ interface MonacoRef {
 // TODO: look into using https://github.com/DTStack/monaco-sql-languages
 // for improved syntax highlighting and semantic parsing
 async function fetchTheme(theme: string, filename: string, ref: MonacoRef) {
-  if (!(theme in DEFAULT_THEMES) && !ref.definedThemes[theme]) {
-    const url = `https://unpkg.com/monaco-themes/themes/${filename}.json`;
-    const res = await fetch(url);
-    const themeJson = await res.json();
+  // if we've already loaded the theme, don't do anything
+  if (ref.definedThemes[theme]) return;
 
-    interface ThemeRule {
-      token: string;
-      foreground: string;
-    }
+  // default themes are always included
+  if (theme in DEFAULT_THEMES) return;
 
-    // patch `string.sql` tokens, since they seem to always be red
-    const stringRule = themeJson.rules.find((rule: ThemeRule) =>
-      rule.token === "string"
-    );
-    if (stringRule) {
-      themeJson.rules.push({ ...stringRule, token: "string.sql" });
-    }
+  if (theme in CUSTOM_THEMES) {
+    const themeJson = CUSTOM_THEMES_JSON[theme];
 
+    patchTheme(themeJson);
     ref.monaco.editor.defineTheme(theme, themeJson);
     ref.definedThemes[theme] = true;
+    return;
+  }
+
+  const url = `https://unpkg.com/monaco-themes/themes/${filename}.json`;
+  const res = await fetch(url);
+  const themeJson = await res.json();
+
+  patchTheme(themeJson);
+  ref.monaco.editor.defineTheme(theme, themeJson);
+  ref.definedThemes[theme] = true;
+}
+
+// patch `string.sql` tokens, since they seem to always be red
+function patchTheme(theme: editorNS.IStandaloneThemeData) {
+  const stringRule = theme.rules.find((rule) => rule.token === "string");
+  if (stringRule) {
+    theme.rules.push({ ...stringRule, token: "string.sql" });
   }
 }
 
@@ -225,7 +264,7 @@ export default forwardRef(
 
     const [showEditor, setShowEditor] = useState(false);
     const monacoRef = useRef({ definedThemes: {} } as MonacoRef);
-    const [themes, setThemes] = useState<Record<string, string>>(
+    const [themes, setThemes] = useState<Record<string, string | null>>(
       DEFAULT_THEMES,
     );
     const [activeTheme, setActiveTheme] = useState(
@@ -314,7 +353,13 @@ export default forwardRef(
 
         const res = await fetch(THEME_LIST_JSON);
         const data = await res.json();
-        const themes = { ...DEFAULT_THEMES, ...data };
+        const themes = {
+          ...DEFAULT_THEMES,
+          "custom": null,
+          ...CUSTOM_THEMES,
+          "monaco-themes": null,
+          ...data,
+        };
         setThemes(themes);
 
         // fetch the active theme, in case it's not already cached
@@ -494,18 +539,26 @@ export default forwardRef(
                 const newTheme = e.target.value;
                 await fetchTheme(
                   newTheme,
-                  themes[newTheme],
+                  themes[newTheme]!,
                   monacoRef.current,
                 );
                 setActiveTheme(newTheme);
                 globalThis.localStorage.setItem("monaco-theme", newTheme);
               }}
             >
-              {Object.entries(themes).map(([key, value]) => (
-                <option key={key} value={key}>
-                  {value}
-                </option>
-              ))}
+              {Object.entries(themes).map(([key, value]) =>
+                value
+                  ? (
+                    <option key={key} value={key}>
+                      {value}
+                    </option>
+                  )
+                  : (
+                    <option key={key} value={key} disabled>
+                      --
+                    </option>
+                  )
+              )}
             </select>
 
             {toolbar}
