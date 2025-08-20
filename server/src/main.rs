@@ -24,10 +24,10 @@ async fn main() -> eyre::Result<()> {
     #[cfg(feature = "bundle")]
     let encryption_key = Some(dotenv_codegen::dotenv!("ENCRYPTION_KEY"));
     #[cfg(not(feature = "bundle"))]
-    let encryption_key = std::option_env!("ENCRYPTION_KEY");
+    let encryption_key = std::env::var("ENCRYPTION_KEY").ok();
 
     // load encryption key
-    if let Err(err) = dbc::persistence::load_encryption_key(encryption_key) {
+    if let Err(err) = dbc::persistence::load_encryption_key(encryption_key.as_deref()) {
         println!("{}", err);
         std::process::exit(1);
     };

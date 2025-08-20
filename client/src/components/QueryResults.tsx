@@ -78,7 +78,7 @@ export default function QueryResults(
                           : value === null
                           ? (
                             <span className="text-base-content/40">
-                              &lt;null&gt;
+                              null
                             </span>
                           )
                           : (Array.isArray(value) || typeof value === "object")
@@ -89,7 +89,7 @@ export default function QueryResults(
                           )
                           : value}
 
-                        {column.fk_constraint && (
+                        {column.fk_constraint && value !== null && (
                           <button
                             type="button"
                             className="ml-1 h-3 w-3 flex items-center justify-center bg-neutral/20 rounded-full cursor-pointer"

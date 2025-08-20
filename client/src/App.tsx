@@ -85,6 +85,10 @@ function App() {
     if (!connection) return;
 
     (async () => {
+      // reset database/schema when connection changes
+      setDatabase(null);
+      setSchema(null);
+
       const databases = await rawDefaultQuery<Database[]>(
         connection.name,
         "/db/databases",
@@ -213,6 +217,9 @@ function App() {
     } else {
       setShowResults(true);
     }
+
+    // reset to first page
+    setPage(1);
   }
 
   function handleSave(updatedConnections: Connection[]) {
@@ -236,7 +243,7 @@ function App() {
           onClick={() => {
             n += 1;
             editorRef.current!.openTab({
-              id: `dbc://query/${n}`,
+              id: `dbc://query/${new Date()}`,
               name: `Query / Script ${n}`,
               language: "sql",
               contents: "",
@@ -322,7 +329,7 @@ function App() {
 
               {version && (
                 <div className="px-4 py-2 bg-neutral/20">
-                  <div className="block badge badge-xs badge-primary select-none">
+                  <div className="badge badge-xs badge-primary flex items-center select-none">
                     Connected: {version}
                   </div>
                 </div>
@@ -380,7 +387,7 @@ function App() {
             onForeignKeyClick={(column, value) => {
               n += 1;
               editorRef.current!.openTab({
-                id: `dbc://query/${n}`,
+                id: `dbc://query/${new Date()}`,
                 name: `Query / Script ${n}`,
                 language: "sql",
                 contents:
@@ -401,7 +408,10 @@ function App() {
               page={page}
               setPage={setPage}
               pageSize={pageSize}
-              setPageSize={setPageSize}
+              setPageSize={(newPageSize) => {
+                setPageSize(newPageSize);
+                setPage(1);
+              }}
             />
           )}
         </div>

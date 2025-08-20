@@ -1,5 +1,6 @@
 use native_tls::TlsConnector;
 use postgres_native_tls::MakeTlsConnector;
+use rust_decimal::Decimal;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -788,9 +789,12 @@ fn parse_query(query: &str) -> String {
 
 fn is_ddl(query: &str) -> bool {
     let query = query.to_ascii_lowercase();
-    ["create", "alter", "drop", "truncate", "comment"]
-        .iter()
-        .any(|verb| query.contains(verb))
+    // insert/update are DML but close enough
+    [
+        "create", "alter", "drop", "truncate", "comment", "insert", "update",
+    ]
+    .iter()
+    .any(|verb| query.contains(verb))
 }
 
 fn col_supported(col: &tokio_postgres::Column) -> bool {
@@ -847,13 +851,17 @@ fn to_json(
             let val: Option<i16> = row.get(idx);
             Some(val.into())
         }
-        Type::FLOAT8 | Type::NUMERIC => {
+        Type::FLOAT8 => {
             let val: Option<f64> = row.get(idx);
             Some(val.into())
         }
         Type::FLOAT4 => {
             let val: Option<f32> = row.get(idx);
             Some(val.into())
+        }
+        Type::NUMERIC => {
+            let val: Option<Decimal> = row.get(idx);
+            Some(val.map(|d| d.to_string()).into())
         }
         Type::JSONB | Type::JSON => {
             let val: Option<serde_json::Value> = row.get(idx);
