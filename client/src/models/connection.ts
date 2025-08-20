@@ -23,19 +23,19 @@ export default interface Connection {
 export function connectionColorToClass(color: Connection["color"]) {
   switch (color) {
     case "primary":
-      return "bg-primary focus:bg-primary focus:outline-primary";
+      return "bg-primary text-primary-content focus:bg-primary focus:outline-primary";
     case "secondary":
-      return "bg-secondary focus:bg-secondary focus:outline-secondary";
+      return "bg-secondary text-secondary-content focus:bg-secondary focus:outline-secondary";
     case "accent":
-      return "bg-accent focus:bg-accent focus:outline-accent";
+      return "bg-accent text-accent-content focus:bg-accent focus:outline-accent";
     case "info":
-      return "bg-info focus:bg-info focus:outline-info";
+      return "bg-info text-info-content focus:bg-info focus:outline-info";
     case "success":
-      return "bg-success focus:bg-success focus:outline-success";
+      return "bg-success text-success-content focus:bg-success focus:outline-success";
     case "warning":
-      return "bg-warning focus:bg-warning focus:outline-warning";
+      return "bg-warning text-warning-content focus:bg-warning focus:outline-warning";
     case "error":
-      return "bg-error focus:bg-error focus:outline-error";
+      return "bg-error text-error-content focus:bg-error focus:outline-error";
     default:
       return "focus:outline-primary";
   }

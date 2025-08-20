@@ -2,6 +2,7 @@ import {
   HiArrowDown as SortDescIcon,
   HiArrowRight as ForeignKeyIcon,
   HiArrowUp as SortAscIcon,
+  HiDocumentDuplicate as CopyIcon,
 } from "react-icons/hi";
 import {
   PaginatedQueryResult,
@@ -44,11 +45,12 @@ export default function QueryResults(
             {page.entries.columns.map((column, idx) => (
               <th
                 key={`${column.name}-${idx}`}
-                className="bg-neutral/70 text-neutral-content font-semibold"
+                className="bg-neutral text-neutral-content font-semibold"
               >
                 <div className="flex items-center">
                   <button
                     type="button"
+                    title="Sort by this column"
                     className="cursor-pointer -ml-1 px-1 rounded-sm hover:bg-neutral/30"
                     onClick={() =>
                       onToggleSort(
@@ -62,20 +64,20 @@ export default function QueryResults(
                     {column.name}
                   </button>
 
-                  {page.sort?.column_idx === idx && (
-                    <span className="ml-1 h-3 w-3 flex items-center justify-center bg-primary text-primary-content rounded-full">
-                      {page.sort.direction === "ASC"
-                        ? <SortAscIcon className="h-2 w-2" />
-                        : <SortDescIcon className="h-2 w-2" />}
-                    </span>
-                  )}
-
                   {column.fk_constraint && (
                     <span
                       title={`FK: ${column.fk_constraint}\n→ ${column.fk_table}.${column.fk_column}`}
                       className="ml-1 h-3 w-3 flex items-center justify-center bg-accent text-accent-content rounded-full"
                     >
                       <ForeignKeyIcon className="h-2 w-2" />
+                    </span>
+                  )}
+
+                  {page.sort?.column_idx === idx && (
+                    <span className="ml-1 h-3 w-3 flex items-center justify-center bg-primary text-primary-content rounded-full">
+                      {page.sort.direction === "ASC"
+                        ? <SortAscIcon className="h-2 w-2" />
+                        : <SortDescIcon className="h-2 w-2" />}
                     </span>
                   )}
                 </div>
@@ -102,7 +104,7 @@ export default function QueryResults(
 
                   return (
                     <td key={idx} className="border-r border-neutral-500/10">
-                      <div className="flex items-center justify-between">
+                      <div className="group flex items-center justify-between">
                         {value === true
                           ? "true"
                           : value === false
@@ -121,15 +123,35 @@ export default function QueryResults(
                           )
                           : value}
 
-                        {column.fk_constraint && value !== null && (
-                          <button
-                            type="button"
-                            className="ml-1 h-3 w-3 flex items-center justify-center bg-neutral/20 rounded-full cursor-pointer"
-                            onClick={() => onForeignKeyClick(column, value)}
-                          >
-                            <ForeignKeyIcon className="h-2 w-2" />
-                          </button>
-                        )}
+                        <div className="ml-2 flex items-center gap-1.5 transition-opacity opacity-0 group-hover:opacity-100 ">
+                          {value !== null && (
+                            <button
+                              type="button"
+                              title="Copy to clipboard"
+                              className="h-4 w-4 flex items-center justify-center bg-neutral/20 rounded-full cursor-pointer"
+                              onClick={() =>
+                                navigator.clipboard.writeText(
+                                  (Array.isArray(value) ||
+                                      typeof value === "object")
+                                    ? JSON.stringify(value, null, 2)
+                                    : value.toString(),
+                                )}
+                            >
+                              <CopyIcon className="h-3 w-3" />
+                            </button>
+                          )}
+
+                          {column.fk_constraint && value !== null && (
+                            <button
+                              type="button"
+                              title="Query foreign key value"
+                              className="h-4 w-4 flex items-center justify-center bg-neutral/20 rounded-full cursor-pointer"
+                              onClick={() => onForeignKeyClick(column, value)}
+                            >
+                              <ForeignKeyIcon className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </td>
                   );
