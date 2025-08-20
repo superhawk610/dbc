@@ -93,9 +93,10 @@ function App() {
     if (!connection) return;
 
     (async () => {
-      // reset database/schema when connection changes
+      // reset database/schema/query when connection changes
       setDatabase(null);
       setSchema(null);
+      setQuery(null);
 
       try {
         setError(null);
@@ -215,6 +216,7 @@ function App() {
       setRes(null);
 
       // FIXME: provided structured query error instead of using regex parsing
+      // FIXME: errorPos should be relative to active query at time of dispatch
       const regex = /\(at position (\d+)\)/.exec(message);
       if (regex) {
         const errorPos = Number(regex[1]);

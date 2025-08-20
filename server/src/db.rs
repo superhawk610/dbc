@@ -255,25 +255,48 @@ impl QueryResultColumn {
                 )
             }));
 
-        // FIXME: switch to `pg_*` tables, since `constraint_column_usages`
+        // switched to `pg_*` tables, since `constraint_column_usages`
         // requires that the current user _owns_ the table
         // see: https://stackoverflow.com/a/39379940/885098
+        // let sql = "
+        // select
+        //   tc.constraint_name,
+        //   kcu.table_name,
+        //   kcu.column_name,
+        //   ccu.table_name,
+        //   ccu.column_name
+        // from information_schema.table_constraints tc
+        // join information_schema.key_column_usage kcu
+        //   on tc.constraint_name = kcu.constraint_name
+        //   and tc.table_schema = kcu.table_schema
+        // join information_schema.constraint_column_usage ccu
+        //   on ccu.constraint_name = tc.constraint_name
+        // where tc.constraint_type = 'FOREIGN KEY'
+        // and tc.table_schema = any($1)
+        // and tc.table_name = any($2)";
+
         let sql = "
-        select
-          tc.constraint_name,
-          kcu.table_name,
-          kcu.column_name,
-          ccu.table_name,
-          ccu.column_name
-        from information_schema.table_constraints tc
-        join information_schema.key_column_usage kcu
-          on tc.constraint_name = kcu.constraint_name
-          and tc.table_schema = kcu.table_schema
-        join information_schema.constraint_column_usage ccu
-          on ccu.constraint_name = tc.constraint_name
-        where tc.constraint_type = 'FOREIGN KEY'
-        and tc.table_schema = any($1)
-        and tc.table_name = any($2)";
+        SELECT 
+          conname constraint_name,
+          conrelid::regclass::text table_from,
+          fa.attname column_from,
+          confrelid::regclass::text table_to,
+          da.attname column_to
+          -- pg_get_constraintdef(c.oid) constraint_def
+        FROM pg_constraint c 
+        JOIN pg_namespace n 
+          ON n.oid = c.connamespace
+        CROSS JOIN LATERAL unnest(c.conkey) fk(k)
+        JOIN pg_attribute fa
+          ON fa.attrelid = c.conrelid
+          AND fa.attnum = fk.k
+        CROSS JOIN LATERAL unnest(c.confkey) dk(k)
+        JOIN pg_attribute da
+          ON da.attrelid = c.conrelid
+          AND da.attnum = dk.k
+        WHERE contype IN ('f')
+        AND n.nspname = any($1)
+        AND conrelid::regclass::text = any($2)";
 
         let table_schemas = attr_lookup
             .iter()
@@ -649,6 +672,10 @@ async fn raw_query(
     } else {
         // fall back on simple query (uses TEXT instead of BINARY encoding)
         tracing::info!("falling back on TEXT encoding");
+
+        if !params.is_empty() {
+            eyre::bail!("TEXT encoding does not support parameters");
+        }
 
         let rows = client.simple_query(&query).await.map_err(PgError::from)?;
 

@@ -64,6 +64,20 @@ async function fetchTheme(theme: string, filename: string, ref: MonacoRef) {
     const url = `https://unpkg.com/monaco-themes/themes/${filename}.json`;
     const res = await fetch(url);
     const themeJson = await res.json();
+
+    interface ThemeRule {
+      token: string;
+      foreground: string;
+    }
+
+    // patch `string.sql` tokens, since they seem to always be red
+    const stringRule = themeJson.rules.find((rule: ThemeRule) =>
+      rule.token === "string"
+    );
+    if (stringRule) {
+      themeJson.rules.push({ ...stringRule, token: "string.sql" });
+    }
+
     ref.monaco.editor.defineTheme(theme, themeJson);
     ref.definedThemes[theme] = true;
   }
