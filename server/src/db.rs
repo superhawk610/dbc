@@ -254,6 +254,9 @@ impl QueryResultColumn {
                 )
             }));
 
+        // FIXME: switch to `pg_*` tables, since `constraint_column_usages`
+        // requires that the current user _owns_ the table
+        // see: https://stackoverflow.com/a/39379940/885098
         let sql = "
         select
           tc.constraint_name,

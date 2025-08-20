@@ -13,6 +13,8 @@ use tao::{
 use tokio::process::Command;
 use wry::WebViewBuilder;
 
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 pub struct WebView;
 
 impl WebView {
@@ -95,7 +97,7 @@ impl WebView {
                             Some(
                                 AboutMetadataBuilder::new()
                                     .name(Some("dbc"))
-                                    .version(Some(std::env::var("CARGO_PKG_VERSION").unwrap()))
+                                    .version(Some(VERSION))
                                     .comments(Some("A database client."))
                                     .copyright(Some("© 2025 Aaron Ross. All rights reserved."))
                                     .build(),
