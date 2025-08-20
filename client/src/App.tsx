@@ -71,6 +71,18 @@ function App() {
   const version = useConnectionVersion(connection?.name);
 
   useEffect(() => {
+    globalThis.__wryContext__.handlers.openSettings = () => {
+      setSettingsModalsActive(true);
+    };
+    globalThis.__wryContext__.handlers.newTab = () => {
+      openNewTab();
+    };
+    globalThis.__wryContext__.handlers.toggleResults = () => {
+      setShowResults((x) => !x);
+    };
+  }, []);
+
+  useEffect(() => {
     (async () => {
       try {
         setError(null);
@@ -285,19 +297,22 @@ function App() {
     );
   }
 
+  function openNewTab() {
+    editorRef.current!.openTab({
+      id: `dbc://query/${new Date()}`,
+      name: (n: number) => `Query / Script ${n + 1}`,
+      language: "sql",
+      contents: "",
+    });
+  }
+
   return (
     <div className="flex flex-col items-stretch w-screen h-screen">
       <Navbar onSaveSettings={handleSave}>
         <button
           type="button"
           className="btn btn-sm"
-          onClick={() =>
-            editorRef.current!.openTab({
-              id: `dbc://query/${new Date()}`,
-              name: (n: number) => `Query / Script ${n + 1}`,
-              language: "sql",
-              contents: "",
-            })}
+          onClick={openNewTab}
         >
           <NewTabIcon /> New Tab
         </button>

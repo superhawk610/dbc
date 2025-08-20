@@ -133,7 +133,11 @@ function SettingsModalBody({ actions, onSave }: SettingsModalBodyProps) {
                 onClick={() => changeConnection(idx)}
                 className={`px-2 py-0.5 w-full rounded text-left cursor-pointer
                 hover:bg-primary/90 hover:text-primary-content
-                ${connection?.name === conn.name ? "bg-primary" : ""}`}
+                ${
+                  connection?.name === conn.name
+                    ? "bg-primary text-primary-content"
+                    : ""
+                }`}
               >
                 {conn.color && (
                   <span

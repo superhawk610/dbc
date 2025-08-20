@@ -98,7 +98,10 @@ impl WebView {
         });
 
         let _menu = if cfg!(target_os = "macos") {
-            use muda::{AboutMetadataBuilder, Menu, PredefinedMenuItem, Submenu};
+            use muda::{
+                AboutMetadataBuilder, Menu, MenuItem, PredefinedMenuItem, Submenu,
+                accelerator::{Accelerator, Code, Modifiers},
+            };
 
             let menu = Menu::with_items(&[
                 &Submenu::with_items(
@@ -123,12 +126,32 @@ impl WebView {
                         // &PredefinedMenuItem::hide_others(None),
                         // &PredefinedMenuItem::show_all(None),
                         &PredefinedMenuItem::separator(),
+                        &MenuItem::with_id(
+                            "settings",
+                            "Settings",
+                            true,
+                            Some(Accelerator::new(Some(Modifiers::SUPER), Code::Comma)),
+                        ),
+                        &PredefinedMenuItem::separator(),
                         &PredefinedMenuItem::quit(None),
                     ],
                 )
                 .unwrap(),
-                &Submenu::with_items("File", true, &[&PredefinedMenuItem::close_window(None)])
-                    .unwrap(),
+                &Submenu::with_items(
+                    "File",
+                    true,
+                    &[
+                        &MenuItem::with_id(
+                            "new-tab",
+                            "New Tab",
+                            true,
+                            Some(Accelerator::new(Some(Modifiers::SUPER), Code::KeyT)),
+                        ),
+                        &PredefinedMenuItem::separator(),
+                        &PredefinedMenuItem::close_window(None),
+                    ],
+                )
+                .unwrap(),
                 &Submenu::with_items(
                     "Edit",
                     true,
@@ -141,6 +164,32 @@ impl WebView {
                         &PredefinedMenuItem::paste(None),
                         &PredefinedMenuItem::select_all(None),
                     ],
+                )
+                .unwrap(),
+                &Submenu::with_items(
+                    "View",
+                    true,
+                    &[&MenuItem::with_id(
+                        "toggle-results",
+                        "Toggle Query Results",
+                        true,
+                        None,
+                    )],
+                )
+                .unwrap(),
+                #[cfg(feature = "devtools")]
+                &Submenu::with_items(
+                    "Developer",
+                    true,
+                    &[&MenuItem::with_id(
+                        "toggle-devtools",
+                        "Toggle DevTools",
+                        true,
+                        Some(Accelerator::new(
+                            Some(Modifiers::SUPER | Modifiers::ALT),
+                            Code::KeyI,
+                        )),
+                    )],
                 )
                 .unwrap(),
             ])
@@ -171,8 +220,9 @@ impl WebView {
             .build(&event_loop)
             .unwrap();
 
-        let _webview = WebViewBuilder::new()
+        let webview = WebViewBuilder::new()
             .with_url(format!("http://localhost:{asset_port}"))
+            .with_devtools(true)
             .build(&window)
             .unwrap();
 
@@ -185,9 +235,19 @@ impl WebView {
                     ..
                 } => *control_flow = ControlFlow::Exit,
 
-                Event::UserEvent(UserEvent::MenuEvent(ev)) => {
-                    dbg!(&ev);
-                }
+                Event::UserEvent(UserEvent::MenuEvent(ev)) => match ev.id.0.as_str() {
+                    cmd @ ("settings" | "new-tab" | "toggle-results") => {
+                        if let Err(err) =
+                            webview.evaluate_script(&format!("window.__wry__('{cmd}')"))
+                        {
+                            eprintln!("Failed to open settings: {err}");
+                        }
+                    }
+                    "toggle-devtools" => webview.open_devtools(),
+                    _ => {
+                        dbg!(&ev);
+                    }
+                },
 
                 _ => {}
             }
