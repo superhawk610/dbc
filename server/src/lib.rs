@@ -18,7 +18,7 @@ pub struct ConnectionKey {
 }
 
 pub struct State {
-    pub pools: RwLock<HashMap<ConnectionKey, pool::ConnectionPool>>,
+    pub pools: Mutex<HashMap<ConnectionKey, pool::ConnectionPool>>,
     pub config: RwLock<persistence::Store>,
     pub worker: Mutex<stream::StreamWorker>,
 }
@@ -55,17 +55,8 @@ impl State {
         };
 
         // use an existing connection pool if one already exists
-        let pools = self.pools.read().await;
-        if let Some(pool) = pools.get(&conn_key) {
-            return pool.get_conn().await;
-        }
-        drop(pools);
-
-        // if not, switch to a write lock; we need to check again after acquiring
-        // the lock, since another thread may have also been waiting and initialized
-        // the connection pool before us
-        let mut pools = self.pools.write().await;
-        if let Some(pool) = pools.get(&conn_key) {
+        let mut pools = self.pools.lock().await;
+        if let Some(pool) = pools.get_mut(&conn_key) {
             return pool.get_conn().await;
         }
 
@@ -98,7 +89,7 @@ impl State {
 
         let cfg = crate::db::Config::from(&connection);
         match crate::pool::ConnectionPool::new(cfg).await {
-            Ok(pool) => {
+            Ok(mut pool) => {
                 let pool_size = pool.pool_size().await;
                 tracing::info!("Success! {pool_size} connections in pool.");
                 self.broadcast(format!("Success! {pool_size} connections in pool."))
@@ -108,8 +99,8 @@ impl State {
                 let version_info = crate::db::version_info(&conn).await?;
                 self.broadcast(version_info).await;
 
-                let entry = pools.entry(conn_key).insert_entry(pool);
-                entry.get().get_conn().await
+                let mut entry = pools.entry(conn_key).insert_entry(pool);
+                entry.get_mut().get_conn().await
             }
 
             Err(err) => {
@@ -131,7 +122,7 @@ impl State {
     /// Print a debug representation of the application state. This has to
     /// be a method instead of a `Debug` implementation because it's `async`.
     pub async fn debug(&self) -> String {
-        let pools = self.pools.read().await;
+        let pools = self.pools.lock().await;
         let mut counts = Vec::new();
         for (conn, pool) in pools.iter() {
             counts.push(format!(

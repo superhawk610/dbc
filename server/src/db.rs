@@ -23,8 +23,12 @@ pub struct Config {
     pub ssl: bool,
     #[builder(default = 5)]
     pub pool_size: usize,
+    /// How long to wait (in seconds) when checking out a connection.
     #[builder(default = 30)]
     pub pool_timeout_s: u64,
+    /// How long to wait (in seconds) with no activity before closing all open connections.
+    #[builder(default = 30 * 60)]
+    pub idle_timeout_s: u64,
 }
 
 impl Config {
@@ -75,6 +79,12 @@ impl std::ops::Deref for Connection {
     }
 }
 
+impl Drop for Connection {
+    fn drop(&mut self) {
+        self.kill();
+    }
+}
+
 impl Connection {
     /// Checks whether a connection is still live.
     ///
@@ -91,7 +101,7 @@ impl Connection {
     ///
     /// Calling this method multiple times is safe; any call after the
     /// first will have no effect.
-    pub async fn kill(&mut self) {
+    pub fn kill(&mut self) {
         if let Some(tx) = self.tx.take() {
             let _ = tx.send(());
         }

@@ -87,7 +87,7 @@ pub async fn update_config(
         .broadcast("Settings updated, restarting active connections...")
         .await;
 
-    let mut pools = state.pools.write().await;
+    let mut pools = state.pools.lock().await;
     let mut close_pools = HashSet::new();
     for (conn, pool) in pools.iter_mut() {
         match config

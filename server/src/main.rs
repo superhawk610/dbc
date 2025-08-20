@@ -61,7 +61,7 @@ async fn main() -> eyre::Result<()> {
     }
 
     let state = Arc::new(dbc::State {
-        pools: RwLock::new(HashMap::new()),
+        pools: Mutex::new(HashMap::new()),
         config: RwLock::new(store),
         worker: Mutex::new(worker),
     });

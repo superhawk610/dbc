@@ -4,6 +4,7 @@ use tokio::{
     select,
     sync::Mutex,
     sync::broadcast::{Sender, channel},
+    sync::mpsc,
 };
 
 pub struct ConnectionPool {
@@ -12,9 +13,12 @@ pub struct ConnectionPool {
 }
 
 struct ConnectionPoolInner {
+    live: bool,
     config: db::Config,
-    conns: VecDeque<db::Connection>,
     conn_avail: Sender<()>,
+    conns: VecDeque<db::Connection>,
+    idle_timeout: std::time::Duration,
+    not_idle: Option<mpsc::Sender<()>>,
 }
 
 pub struct CheckedOutConnection {
@@ -29,6 +33,12 @@ impl Drop for CheckedOutConnection {
 
         tokio::spawn(async move {
             let mut pool = pool.lock().await;
+
+            // if the pool has been shut down, don't check the connection back in
+            if !pool.live {
+                return;
+            }
+
             let was_empty = pool.conns.is_empty();
 
             // if this connection has terminated, we don't need to put it back into the pool;
@@ -63,25 +73,60 @@ impl ConnectionPool {
         let timeout_s = config.pool_timeout_s;
         assert!(timeout_s > 0, "pool timeout must be greater than 0");
 
+        let idle_timeout_s = config.idle_timeout_s;
+        let idle_timeout = std::time::Duration::from_secs(idle_timeout_s);
+        assert!(idle_timeout_s > 0, "idle timeout must be greater than 0");
+
         let (tx, _) = channel(pool_size);
 
         // "prime" the channel so that the first call to get_conn() doesn't block
         let _ = tx.send(());
 
         let mut inner = ConnectionPoolInner {
+            live: true,
             config,
-            conns: VecDeque::new(),
             conn_avail: tx,
+            conns: VecDeque::new(),
+            idle_timeout,
+            // will be set by `spawn_idle_watcher`
+            not_idle: None,
         };
 
-        for _ in 0..pool_size {
-            inner.spawn_conn().await?;
-        }
+        // spawn initial connection tasks
+        inner.init().await?;
 
-        Ok(Self {
+        let mut this = Self {
             inner: Arc::new(Mutex::new(inner)),
             timeout: std::time::Duration::from_secs(timeout_s),
-        })
+        };
+
+        // spawn idle watcher
+        this.spawn_idle_watcher().await;
+
+        Ok(this)
+    }
+
+    async fn spawn_idle_watcher(&mut self) {
+        tracing::debug!("spawning idle watcher");
+
+        let mut inner = self.inner.lock().await;
+        let (not_idle_tx, mut not_idle_rx) = mpsc::channel::<()>(1);
+        inner.not_idle = Some(not_idle_tx);
+
+        let idle_timeout = inner.idle_timeout;
+        let inner = Arc::clone(&self.inner);
+        tokio::spawn(async move {
+            loop {
+                if let Err(_) = tokio::time::timeout(idle_timeout, not_idle_rx.recv()).await {
+                    tracing::info!("pool idle timeout reached, shutting down...");
+                    let mut inner = inner.lock().await;
+                    inner.go_dormant().await;
+                    break;
+                }
+
+                tracing::debug!("still alive");
+            }
+        });
     }
 
     pub async fn pool_size(&self) -> usize {
@@ -89,58 +134,71 @@ impl ConnectionPool {
         inner.config.pool_size
     }
 
-    pub async fn get_conn(&self) -> eyre::Result<CheckedOutConnection> {
-        // try to get a connection from the pool
-        let mut inner = self.inner.lock().await;
-        if let Some(conn) = inner.conns.pop_back() {
-            return Ok(CheckedOutConnection {
-                conn: Some(conn),
-                pool: Some(Arc::clone(&self.inner)),
-            });
-        }
+    pub async fn get_conn(&mut self) -> eyre::Result<CheckedOutConnection> {
+        let timeout = self.timeout;
 
-        // if no connection is available, wait for a connection to be checked back in
-        let mut conn_avail = inner.conn_avail.subscribe();
-        drop(inner);
+        select! {
+            // when a connection is checked back in, try to get it
+            // it's possible that this fails if another thread was also
+            // waiting for a connection, in which case we'll keep waiting
+            conn = self.wait_for_conn() => {
+                Ok(CheckedOutConnection {
+                    conn: Some(conn?),
+                    pool: Some(Arc::clone(&self.inner)),
+                })
+            }
 
-        let timeout = tokio::time::sleep(self.timeout);
-        tokio::pin!(timeout);
-
-        loop {
-            select! {
-                // when a connection is checked back in, try to get it
-                // it's possible that this fails if another thread was also
-                // waiting for a connection, in which case we'll keep waiting
-                _ = conn_avail.recv() => {
-                    let mut inner = self.inner.lock().await;
-                    if let Some(conn) = inner.conns.pop_back() {
-                        return Ok(CheckedOutConnection {
-                            conn: Some(conn),
-                            pool: Some(Arc::clone(&self.inner)),
-                        });
-                    }
-                }
-
-                // if we've been waiting for a connection for too long, return an error
-                _ = &mut timeout => {
-                    return Err(eyre::eyre!("no connection available after {}s", self.timeout.as_secs()));
-                }
+            // if we've been waiting for a connection for too long, return an error
+            _ = tokio::time::sleep(timeout) => {
+                Err(eyre::eyre!("no connection available after {}s", timeout.as_secs()))
             }
         }
     }
 
-    /// Drop all existing connections in the pool and replace them with new connections.
-    pub async fn reload(&mut self, config: db::Config) -> eyre::Result<()> {
+    async fn wait_for_conn(&mut self) -> eyre::Result<db::Connection> {
+        // try to get a connection from the pool
         let mut inner = self.inner.lock().await;
 
-        // drop and replace the list of connections
-        inner.config = config;
-        inner.conns = VecDeque::new();
+        // if the pool is dormant, reload it;
+        // do this without dropping `inner` so that we keep the mutex lock
+        // and don't recurse infinitely
+        if !inner.live {
+            inner.init().await?;
+            drop(inner);
 
-        // spawn new connections to fill the pool
-        for _ in 0..inner.config.pool_size {
-            inner.spawn_conn().await?;
+            self.spawn_idle_watcher().await;
+
+            return Box::pin(self.wait_for_conn()).await;
         }
+
+        // get the next available connection, if any; if another thread took the
+        // last available connection, wait for another to be checked back in
+        if let Some(conn) = inner.conns.pop_back() {
+            if let Some(not_idle) = inner.not_idle.as_ref() {
+                let _ = not_idle.send(()).await;
+            }
+
+            return Ok(conn);
+        }
+
+        let mut conn_avail = inner.conn_avail.subscribe();
+        drop(inner);
+
+        // wait for another connection to become available and then recurse
+        let _ = conn_avail.recv().await;
+
+        Box::pin(self.wait_for_conn()).await
+    }
+
+    /// Drop all existing connections in the pool and replace them with new connections.
+    pub async fn reload(&mut self, updated_config: db::Config) -> eyre::Result<()> {
+        let mut inner = self.inner.lock().await;
+        inner.config = updated_config;
+        inner.conns.clear();
+        inner.init().await?;
+        drop(inner);
+
+        self.spawn_idle_watcher().await;
 
         Ok(())
     }
@@ -159,5 +217,21 @@ impl ConnectionPoolInner {
         let conn = db::connect(&self.config).await?;
         self.conns.push_front(conn);
         Ok(())
+    }
+
+    async fn init(&mut self) -> eyre::Result<()> {
+        for _ in 0..self.config.pool_size {
+            self.spawn_conn().await?;
+        }
+
+        self.live = true;
+
+        Ok(())
+    }
+
+    async fn go_dormant(&mut self) {
+        self.live = false;
+        self.conns.clear();
+        self.not_idle = None;
     }
 }
