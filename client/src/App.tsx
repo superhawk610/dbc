@@ -17,7 +17,7 @@ import QueryResults from "./components/QueryResults.tsx";
 import Pagination from "./components/Pagination.tsx";
 import Config from "./models/config.ts";
 import Connection from "./models/connection.ts";
-import { PaginatedQueryResult } from "./models/query.ts";
+import { PaginatedQueryResult, Sort } from "./models/query.ts";
 import Database from "./models/database.ts";
 import Schema from "./models/schema.ts";
 import Table from "./models/table.ts";
@@ -29,6 +29,7 @@ const EDITOR_HEIGHT = { min: 100, default: 400 };
 interface LastQuery {
   connection: string | null | undefined;
   query: string;
+  sort: Sort | null;
   page: number;
   pageSize: number;
 }
@@ -53,6 +54,7 @@ function App() {
   const [tables, setTables] = useState<Table[] | null>(null);
 
   // TODO: prefetch more than the current page
+  const [sort, setSort] = useState<Sort | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [query, setQuery] = useState<string | null>(null);
@@ -194,6 +196,7 @@ function App() {
         connection!.name,
         database!,
         query,
+        sort,
         page,
         pageSize,
       );
@@ -235,15 +238,22 @@ function App() {
     if (
       queryRef.current.connection === connection?.name &&
       queryRef.current.query === query &&
+      queryRef.current.sort === sort &&
       queryRef.current.page === page &&
       queryRef.current.pageSize === pageSize
     ) {
       return;
     }
 
-    queryRef.current = { connection: connection?.name, query, page, pageSize };
+    queryRef.current = {
+      connection: connection?.name,
+      query,
+      sort,
+      page,
+      pageSize,
+    };
     dispatchQuery(query, page, pageSize);
-  }, [connection, query, page, pageSize]);
+  }, [connection, query, sort, page, pageSize]);
 
   function submitQuery() {
     const contents = editorRef.current!.getContents();
@@ -424,6 +434,8 @@ function App() {
             page={res}
             error={error}
             loading={loading}
+            onToggleSort={(column_idx, direction) =>
+              setSort({ column_idx, direction })}
             onForeignKeyClick={(column, value) => {
               editorRef.current!.openTab({
                 id: `dbc://query/${new Date()}`,

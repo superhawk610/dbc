@@ -1,4 +1,8 @@
-import { HiArrowRight as ForeignKeyIcon } from "react-icons/hi";
+import {
+  HiArrowDown as SortDescIcon,
+  HiArrowRight as ForeignKeyIcon,
+  HiArrowUp as SortAscIcon,
+} from "react-icons/hi";
 import {
   PaginatedQueryResult,
   QueryColumn,
@@ -9,11 +13,12 @@ export interface Props {
   page: PaginatedQueryResult | null;
   error: string | null;
   loading?: boolean;
+  onToggleSort: (column_idx: number, direction: "ASC" | "DESC") => void;
   onForeignKeyClick: (column: QueryColumn, value: QueryValue) => void;
 }
 
 export default function QueryResults(
-  { page, error, loading, onForeignKeyClick }: Props,
+  { page, error, loading, onToggleSort, onForeignKeyClick }: Props,
 ) {
   if (error) {
     return (
@@ -42,7 +47,29 @@ export default function QueryResults(
                 className="bg-neutral/70 text-neutral-content font-semibold"
               >
                 <div className="flex items-center">
-                  {column.name}
+                  <button
+                    type="button"
+                    className="cursor-pointer -ml-1 px-1 rounded-sm hover:bg-neutral/30"
+                    onClick={() =>
+                      onToggleSort(
+                        idx,
+                        page.sort?.column_idx === idx &&
+                          page.sort.direction === "ASC"
+                          ? "DESC"
+                          : "ASC",
+                      )}
+                  >
+                    {column.name}
+                  </button>
+
+                  {page.sort?.column_idx === idx && (
+                    <span className="ml-1 h-3 w-3 flex items-center justify-center bg-primary text-primary-content rounded-full">
+                      {page.sort.direction === "ASC"
+                        ? <SortAscIcon className="h-2 w-2" />
+                        : <SortDescIcon className="h-2 w-2" />}
+                    </span>
+                  )}
+
                   {column.fk_constraint && (
                     <span
                       title={`FK: ${column.fk_constraint}\n→ ${column.fk_table}.${column.fk_column}`}

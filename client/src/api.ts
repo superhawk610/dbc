@@ -1,4 +1,4 @@
-import { PaginatedQueryResult } from "./models/query.ts";
+import { PaginatedQueryResult, Sort } from "./models/query.ts";
 
 const baseUrl = `http://${import.meta.env.VITE_API_BASE}`;
 const socketUrl = `ws://${import.meta.env.VITE_API_BASE}`;
@@ -55,10 +55,16 @@ export const paginatedQuery = (
   connection: string,
   database: string,
   query: string,
+  sort: Sort | null,
   page: number,
   pageSize: number,
 ) =>
-  post<PaginatedQueryResult>("/query", { query, page, page_size: pageSize }, {
+  post<PaginatedQueryResult>("/query", {
+    query,
+    sort,
+    page,
+    page_size: pageSize,
+  }, {
     headers: { "x-conn-name": connection, "x-database": database },
   });
 

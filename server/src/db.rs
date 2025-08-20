@@ -1,7 +1,8 @@
 use native_tls::TlsConnector;
 use postgres_native_tls::MakeTlsConnector;
 use rust_decimal::Decimal;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_with::{DeserializeFromStr, SerializeDisplay};
 use std::collections::{HashMap, HashSet};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::oneshot::{Receiver, Sender, channel};
@@ -148,6 +149,10 @@ pub struct PaginatedQueryResult {
     pub total_count: usize,
     /// The total number of pages.
     pub total_pages: usize,
+    /// The sort order used to generate this page. The sort `column_idx` can
+    /// be used to index into the `QueryResult`'s `columns` array to get the
+    /// column name.
+    pub sort: Option<Sort>,
     /// The current page.
     pub entries: QueryResult,
 }
@@ -559,12 +564,46 @@ pub async fn table_ddl(
     ))
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Sort {
+    pub column_idx: usize,
+    pub direction: SortDirection,
+}
+
+#[derive(Debug, Clone, SerializeDisplay, DeserializeFromStr)]
+pub enum SortDirection {
+    Asc,
+    Desc,
+}
+
+impl std::fmt::Display for SortDirection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SortDirection::Asc => write!(f, "ASC"),
+            SortDirection::Desc => write!(f, "DESC"),
+        }
+    }
+}
+
+impl std::str::FromStr for SortDirection {
+    type Err = eyre::Report;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_uppercase().as_str() {
+            "ASC" => Ok(SortDirection::Asc),
+            "DESC" => Ok(SortDirection::Desc),
+            _ => Err(eyre::eyre!("Invalid sort direction: {}", s)),
+        }
+    }
+}
+
 pub async fn paginated_query(
     client: &tokio_postgres::Client,
     raw_query: &str,
     params: &[SqlParam<'_>],
     page: usize,
     page_size: usize,
+    sort: Option<Sort>,
 ) -> eyre::Result<PaginatedQueryResult> {
     fn indent(s: &str) -> String {
         format!("  {}", s.replace('\n', "\n  "))
@@ -582,6 +621,7 @@ pub async fn paginated_query(
             page_count: 1,
             total_count: 1,
             total_pages: 1,
+            sort: None,
             entries: query(client, &base_query, params).await?,
         });
     }
@@ -591,7 +631,12 @@ pub async fn paginated_query(
 
     let limit = page_size;
     let offset = (page - 1) * page_size;
-    let page_query = format!("SELECT * FROM (\n{base_query}\n) _ LIMIT {limit} OFFSET {offset};");
+    let page_query = format!(
+        "SELECT * FROM (\n{base_query}\n) _ {} LIMIT {limit} OFFSET {offset};",
+        sort.as_ref()
+            .map(|s| format!("ORDER BY {} {}", s.column_idx + 1, s.direction))
+            .unwrap_or_default()
+    );
 
     let (mut result, count_result) = futures_util::future::try_join(
         query(client, &page_query, params),
@@ -612,6 +657,7 @@ pub async fn paginated_query(
         page_count,
         total_count,
         total_pages,
+        sort,
         entries: result,
     })
 }

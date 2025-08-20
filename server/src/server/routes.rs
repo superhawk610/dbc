@@ -196,6 +196,7 @@ pub async fn get_table_ddl(
 #[derive(Deserialize)]
 struct QueryParams {
     pub query: String,
+    pub sort: Option<crate::db::Sort>,
     pub page: usize,
     pub page_size: usize,
 }
@@ -209,7 +210,14 @@ pub async fn handle_query(
 ) -> eyre::Result<Json<crate::db::PaginatedQueryResult>> {
     let conn = state.get_conn(connection.into(), database.into()).await?;
     Ok(Json(
-        crate::db::paginated_query(&conn, &params.query, &[], params.page, params.page_size)
-            .await?,
+        crate::db::paginated_query(
+            &conn,
+            &params.query,
+            &[],
+            params.page,
+            params.page_size,
+            params.sort,
+        )
+        .await?,
     ))
 }

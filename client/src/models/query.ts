@@ -20,11 +20,17 @@ export interface QueryResult {
   is_ddl: boolean;
 }
 
+export interface Sort {
+  column_idx: number;
+  direction: "ASC" | "DESC";
+}
+
 export interface PaginatedQueryResult {
   page: number;
   page_size: number;
   page_count: number;
   total_count: number;
   total_pages: number;
+  sort: Sort | null;
   entries: QueryResult;
 }
