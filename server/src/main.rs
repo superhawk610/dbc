@@ -5,7 +5,12 @@ use tokio::sync::{Mutex, RwLock};
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     // load environment variables
+    #[cfg(not(feature = "bundle"))]
     dotenv::dotenv().ok();
+
+    // fix $PATH when bundled
+    #[cfg(feature = "bundle")]
+    let _ = fix_path_env::fix();
 
     // initialize logger
     tracing_subscriber::fmt()
@@ -16,9 +21,13 @@ async fn main() -> eyre::Result<()> {
     // start up stream worker
     let worker = dbc::stream::StreamWorker::new();
 
+    #[cfg(feature = "bundle")]
+    let encryption_key = Some(dotenv_codegen::dotenv!("ENCRYPTION_KEY"));
+    #[cfg(not(feature = "bundle"))]
+    let encryption_key = std::option_env!("ENCRYPTION_KEY");
+
     // load encryption key
-    let encryption_key = std::env::var("ENCRYPTION_KEY").ok();
-    if let Err(err) = dbc::persistence::load_encryption_key(encryption_key.as_deref()) {
+    if let Err(err) = dbc::persistence::load_encryption_key(encryption_key) {
         println!("{}", err);
         std::process::exit(1);
     };

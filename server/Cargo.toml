@@ -2,9 +2,17 @@
 name = "dbc"
 version = "0.1.0"
 edition = "2024"
+description = "database client"
 
 [features]
-bundle = ["dep:tao", "dep:wry", "dep:muda", "poem/static-files"]
+bundle = [
+  "dep:tao",
+  "dep:wry",
+  "dep:muda",
+  "dep:dotenv_codegen",
+  "dep:fix-path-env",
+  "poem/static-files"
+]
 
 [dependencies]
 aes-gcm = "0.10.3"
@@ -28,6 +36,23 @@ tokio-postgres = { version = "0.7.13", features = [
 toml = "0.8.22"
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
+dotenv_codegen = { version = "0.15.0", optional = true }
+fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs", optional = true }
 muda = { version = "0.17.1", optional = true }
 tao = { version = "0.34.0", optional = true }
 wry = { version = "0.52.1", optional = true }
+
+[package.metadata.bundle]
+identifier = "io.github.superhawk610.dbc"
+icon = [
+  "icons/64x64.png",
+  "icons/128x128.png",
+  "icons/128x128@2x.png",
+]
+resources = [
+  "../client/deno.json",
+  "../client/deno.lock",
+  "../client/index.html",
+  "../client/vite.config.ts",
+  "../client/src"
+]

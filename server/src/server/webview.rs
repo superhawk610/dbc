@@ -35,8 +35,21 @@ impl WebView {
             let _ = tokio::fs::remove_dir_all(&asset_dir).await;
         }
 
+        // if we're running from within the MacOS bundle, look in the Resources dir
+        // otherwise, we're running via `cargo run` and we're within the repository
+        let working_dir = if let Ok(bin_path) = std::env::current_exe()
+            && let Some(bin_dir) = bin_path.parent()
+            && let Some(dir_name) = bin_dir.file_name()
+            && let Some(dir_name) = dir_name.to_str()
+            && dir_name == "MacOS"
+        {
+            bin_dir.join("../Resources/_up_/client")
+        } else {
+            std::path::PathBuf::from("../client")
+        };
+
         Command::new("deno")
-            .current_dir("../client")
+            .current_dir(working_dir)
             .args(&["task", "build", "--outDir", asset_dir.to_str().unwrap()])
             .env("VITE_API_BASE", format!("localhost:{}", server_port))
             .env("VITE_LOCAL_STORAGE", local_storage)

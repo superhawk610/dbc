@@ -22,9 +22,9 @@ export default function Navbar({ onSaveSettings, children }: Props) {
       </div>
       <div className="flex-none space-x-2">
         {children}
-        {(import.meta.env.VITE_SHOW_LOGS || !import.meta.env.PROD) && (
-          <StreamModal />
-        )}
+        {/* {(import.meta.env.VITE_SHOW_LOGS || !import.meta.env.PROD) && ( */}
+        <StreamModal />
+        {/* )} */}
         <SettingsModal onSave={onSaveSettings} />
         <ThemeSelect />
       </div>
