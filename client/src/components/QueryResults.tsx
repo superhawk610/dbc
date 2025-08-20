@@ -8,11 +8,12 @@ import {
 export interface Props {
   page: PaginatedQueryResult | null;
   error: string | null;
+  loading?: boolean;
   onForeignKeyClick: (column: QueryColumn, value: QueryValue) => void;
 }
 
 export default function QueryResults(
-  { page, error, onForeignKeyClick }: Props,
+  { page, error, loading, onForeignKeyClick }: Props,
 ) {
   if (error) {
     return (
@@ -27,7 +28,11 @@ export default function QueryResults(
   }
 
   return (
-    <div className="flex-1 overflow-auto bg-base-300">
+    <div
+      className={`flex-1 overflow-auto bg-base-300 ${
+        loading ? "opacity-30" : ""
+      }`}
+    >
       <table className="table table-sm table-zebra table-pin-rows table-compact rounded-none bg-base-100 whitespace-nowrap">
         <thead>
           <tr>

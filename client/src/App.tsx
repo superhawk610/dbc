@@ -26,10 +26,8 @@ import useConnectionVersion from "./hooks/useConnectionVersion.ts";
 
 const EDITOR_HEIGHT = { min: 100, default: 400 };
 
-// FIXME: do new tab creation IDs better
-let n = 1;
-
 interface LastQuery {
+  connection: string | null | undefined;
   query: string;
   page: number;
   pageSize: number;
@@ -44,6 +42,7 @@ function App() {
 
   const [res, setRes] = useState<PaginatedQueryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const [connections, setConnections] = useState<Connection[] | null>(null);
   const [connection, setConnection] = useState<Connection | null>(null);
@@ -71,12 +70,21 @@ function App() {
 
   useEffect(() => {
     (async () => {
-      const config = await get<Config>("/config");
-      setConnections(config.connections);
+      try {
+        setError(null);
+        setLoading(true);
 
-      // select first available connection by default
-      if (config.connections.length > 0) {
-        setConnection(config.connections[0]);
+        const config = await get<Config>("/config");
+        setConnections(config.connections);
+
+        // select first available connection by default
+        if (config.connections.length > 0) {
+          setConnection(config.connections[0]);
+        }
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setLoading(false);
       }
     })();
   }, []);
@@ -89,20 +97,29 @@ function App() {
       setDatabase(null);
       setSchema(null);
 
-      const databases = await rawDefaultQuery<Database[]>(
-        connection.name,
-        "/db/databases",
-      );
-      setDatabases(databases);
+      try {
+        setError(null);
+        setLoading(true);
 
-      // select configured database by default, or `postgres` if none configured,
-      // or finally the first available if neither of those are available
-      if (databases.length > 0) {
-        setDatabase(
-          databases.find((d) => d.datname === connection.database)?.datname ||
-            databases.find((d) => d.datname === "postgres")?.datname ||
-            databases[0].datname,
+        const databases = await rawDefaultQuery<Database[]>(
+          connection.name,
+          "/db/databases",
         );
+        setDatabases(databases);
+
+        // select configured database by default, or `postgres` if none configured,
+        // or finally the first available if neither of those are available
+        if (databases.length > 0) {
+          setDatabase(
+            databases.find((d) => d.datname === connection.database)?.datname ||
+              databases.find((d) => d.datname === "postgres")?.datname ||
+              databases[0].datname,
+          );
+        }
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setLoading(false);
       }
     })();
   }, [connection]);
@@ -111,21 +128,30 @@ function App() {
     if (!connection || !database) return;
 
     (async () => {
-      const schemas = await rawQuery<Schema[]>(
-        connection.name,
-        database,
-        "/db/schemas",
-      );
-      setSchemas(schemas);
+      try {
+        setError(null);
+        setLoading(true);
 
-      // select last used schema by default, or try the `public` schema (as that's usually
-      // the default), or finally the first available if neither of those are available
-      if (schemas.length > 0) {
-        setSchema(
-          getLastSchema(connection.name, database) ||
-            schemas.find((s) => s.schema_name === "public")?.schema_name ||
-            schemas[0].schema_name,
+        const schemas = await rawQuery<Schema[]>(
+          connection.name,
+          database,
+          "/db/schemas",
         );
+        setSchemas(schemas);
+
+        // select last used schema by default, or try the `public` schema (as that's usually
+        // the default), or finally the first available if neither of those are available
+        if (schemas.length > 0) {
+          setSchema(
+            getLastSchema(connection.name, database) ||
+              schemas.find((s) => s.schema_name === "public")?.schema_name ||
+              schemas[0].schema_name,
+          );
+        }
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setLoading(false);
       }
     })();
   }, [connection, database]);
@@ -134,12 +160,21 @@ function App() {
     if (!connection || !database || !schema) return;
 
     (async () => {
-      const tables = await rawQuery<Table[]>(
-        connection.name,
-        database,
-        `/db/schemas/${schema}/tables`,
-      );
-      setTables(tables);
+      try {
+        setError(null);
+        setLoading(true);
+
+        const tables = await rawQuery<Table[]>(
+          connection.name,
+          database,
+          `/db/schemas/${schema}/tables`,
+        );
+        setTables(tables);
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setLoading(false);
+      }
     })();
   }, [connection, database, schema]);
 
@@ -151,6 +186,9 @@ function App() {
     editorRef.current!.clearErrors();
 
     try {
+      setError(null);
+      setLoading(true);
+
       const res = await paginatedQuery(
         connection!.name,
         database!,
@@ -159,7 +197,6 @@ function App() {
         pageSize,
       );
 
-      setError(null);
       setRes(res);
 
       // if the statement contained DDL, refresh the table view
@@ -174,7 +211,6 @@ function App() {
     } catch (err) {
       const message = (err as Error).message;
 
-      console.log("caught");
       setError(message);
       setRes(null);
 
@@ -184,6 +220,8 @@ function App() {
         const errorPos = Number(regex[1]);
         editorRef.current!.addError(message, errorPos);
       }
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -193,6 +231,7 @@ function App() {
 
     // if nothing has changed, do nothing
     if (
+      queryRef.current.connection === connection?.name &&
       queryRef.current.query === query &&
       queryRef.current.page === page &&
       queryRef.current.pageSize === pageSize
@@ -200,9 +239,9 @@ function App() {
       return;
     }
 
-    queryRef.current = { query, page, pageSize };
+    queryRef.current = { connection: connection?.name, query, page, pageSize };
     dispatchQuery(query, page, pageSize);
-  }, [query, page, pageSize]);
+  }, [connection, query, page, pageSize]);
 
   function submitQuery() {
     const contents = editorRef.current!.getContents();
@@ -240,15 +279,13 @@ function App() {
         <button
           type="button"
           className="btn btn-sm"
-          onClick={() => {
-            n += 1;
+          onClick={() =>
             editorRef.current!.openTab({
               id: `dbc://query/${new Date()}`,
-              name: `Query / Script ${n}`,
+              name: (n: number) => `Query / Script ${n + 1}`,
               language: "sql",
               contents: "",
-            });
-          }}
+            })}
         >
           <NewTabIcon /> New Tab
         </button>
@@ -384,11 +421,11 @@ function App() {
           <QueryResults
             page={res}
             error={error}
+            loading={loading}
             onForeignKeyClick={(column, value) => {
-              n += 1;
               editorRef.current!.openTab({
                 id: `dbc://query/${new Date()}`,
-                name: `Query / Script ${n}`,
+                name: (n: number) => `Query / Script ${n + 1}`,
                 language: "sql",
                 contents:
                   `SELECT * FROM ${column.fk_table} WHERE ${column.fk_column} = ${
@@ -408,6 +445,7 @@ function App() {
               page={page}
               setPage={setPage}
               pageSize={pageSize}
+              loading={loading}
               setPageSize={(newPageSize) => {
                 setPageSize(newPageSize);
                 setPage(1);

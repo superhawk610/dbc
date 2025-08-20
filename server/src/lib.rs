@@ -91,7 +91,7 @@ impl State {
             self.broadcast(format!("Fetching password via \"{}\":\n", p))
                 .await;
         }
-        let stderr = connection.load_password().await;
+        let stderr = dbg!(connection.load_password().await)?;
         if let Some(stderr) = stderr {
             self.broadcast(stderr).await;
         }

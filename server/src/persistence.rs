@@ -3,6 +3,7 @@ use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
 };
 use serde::{Deserialize, Serialize};
+use std::os::unix::process::ExitStatusExt;
 use std::sync::OnceLock;
 
 const STORE_FILE: &str = "store.toml";
@@ -64,8 +65,9 @@ impl Connection {
     /// # Panics
     ///
     /// Panics if neither `password` nor `password_file` is set.
-    pub async fn load_password(&mut self) -> Option<String> {
+    pub async fn load_password(&mut self) -> eyre::Result<Option<String>> {
         if let Some(bin) = self.password_file() {
+            let bin = shellexpand::tilde(bin).to_string();
             let output = tokio::process::Command::new(bin)
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
@@ -74,6 +76,23 @@ impl Connection {
                 .wait_with_output()
                 .await
                 .expect("executed successfully");
+
+            // FIXME: kill process if it takes too long
+            dbg!(&output);
+
+            if !output.status.success() {
+                let err = String::from_utf8(output.stderr)
+                    .or_else(|_| output.status.code().map(|c| format!("code {c}")).ok_or(()))
+                    .or_else(|_| {
+                        output
+                            .status
+                            .signal()
+                            .map(|s| format!("signal {s}"))
+                            .ok_or(())
+                    })
+                    .unwrap_or("unknown error".to_owned());
+                eyre::bail!(err);
+            }
 
             self.password = Some(
                 String::from_utf8(output.stdout)
@@ -85,7 +104,7 @@ impl Connection {
             dbg!(&self);
 
             // FIXME: streaming real-time output
-            return String::from_utf8(output.stderr).ok();
+            return Ok(String::from_utf8(output.stderr).ok());
         } else if self.password.is_none() {
             panic!(
                 "{}: either `password` or `password_file` must be set",
@@ -93,7 +112,7 @@ impl Connection {
             );
         }
 
-        None
+        Ok(None)
     }
 
     pub fn password_file(&self) -> Option<&String> {

@@ -73,7 +73,7 @@ struct UpdateConfig {
 pub async fn update_config(
     Json(updated_config): Json<UpdateConfig>,
     Data(state): Data<&Arc<crate::State>>,
-) -> poem::http::StatusCode {
+) -> eyre::Result<poem::http::StatusCode> {
     let mut config = state.config.write().await;
     config.connections = updated_config
         .connections
@@ -92,12 +92,16 @@ pub async fn update_config(
     for (conn, pool) in pools.iter_mut() {
         match config
             .connections
-            .iter()
+            .iter_mut()
             .find(|c| c.name.eq(&conn.connection))
         {
             // if the connection is still present in the config, reload the pool
             Some(conn) => {
-                if let Err(err) = pool.reload(conn.into()).await {
+                if let Some(stderr) = conn.load_password().await? {
+                    state.broadcast(stderr).await;
+                }
+
+                if let Err(err) = pool.reload((&*conn).into()).await {
                     state.broadcast(err.to_string()).await;
                 }
             }
@@ -114,7 +118,7 @@ pub async fn update_config(
 
     state.broadcast("Done!").await;
 
-    poem::http::StatusCode::NO_CONTENT
+    Ok(poem::http::StatusCode::NO_CONTENT)
 }
 
 #[poem::handler]

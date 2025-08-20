@@ -11,12 +11,13 @@ export interface Props {
   query: PaginatedQueryResult;
   page: number;
   pageSize: number;
+  loading?: boolean;
   setPage: (page: number) => void;
   setPageSize: (pageSize: number) => void;
 }
 
 export default function Pagination(
-  { query, page, pageSize, setPage, setPageSize }: Props,
+  { query, page, pageSize, loading, setPage, setPageSize }: Props,
 ) {
   const firstRow = (query.page - 1) * query.page_size + 1;
   const lastRow = firstRow + query.page_size - 1;
@@ -24,6 +25,13 @@ export default function Pagination(
     <div className="flex items-center space-x-2 px-4 py-2 text-sm bg-neutral/20 text-base-content/80">
       <div className="mr-auto">
         Showing {firstRow} - {lastRow} of {query.total_count} rows
+
+        {loading && (
+          <span className="ml-4 text-sm opacity-50">
+            Loading results
+            <span className="ml-2 loading loading-infinity"></span>
+          </span>
+        )}
       </div>
       <div className="flex items-center space-x-1">
         <span>Page</span>

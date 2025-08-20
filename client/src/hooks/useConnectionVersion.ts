@@ -7,6 +7,8 @@ export default function useConnectionVersion(
   const [connectionInfo, setConnectionInfo] = useState<string | null>(null);
 
   useEffect(() => {
+    // reset connection info whenever connection changes
+    setConnectionInfo(null);
     if (!connection) return;
 
     (async () => {

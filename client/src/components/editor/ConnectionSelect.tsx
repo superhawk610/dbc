@@ -1,4 +1,7 @@
-import Connection from "../../models/connection.ts";
+import Connection, {
+  connectionColorToClass,
+  loadConnectionColors,
+} from "../../models/connection.ts";
 import useConnectionVersion from "../../hooks/useConnectionVersion.ts";
 
 export interface Props {
@@ -11,12 +14,17 @@ export interface Props {
 export default function ConnectionSelect(
   { connections, selected, onSelect, onManageConnections }: Props,
 ) {
+  const colors = loadConnectionColors();
   const connectionInfo = useConnectionVersion(selected);
 
   return (
     <select
       title="Connection"
-      className="select select-xs select-ghost shrink basis-[250px] focus:outline-primary"
+      className={`select select-xs select-ghost shrink basis-[250px] ${
+        selected
+          ? connectionColorToClass(colors[selected])
+          : "focus:outline-primary"
+      }`}
       value={selected || undefined}
       onChange={(ev: React.ChangeEvent<HTMLSelectElement>) => {
         const value = ev.target.value;
@@ -29,8 +37,9 @@ export default function ConnectionSelect(
     >
       {connections.map((connection) => (
         <option key={connection.name} value={connection.name}>
-          {connection.name}{" "}
-          {connection.name === selected ? `(${connectionInfo})` : ""}
+          {connection.name} {connection.name === selected && connectionInfo
+            ? `(${connectionInfo})`
+            : ""}
         </option>
       ))}
       <option disabled>---</option>

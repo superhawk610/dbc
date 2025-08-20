@@ -173,7 +173,7 @@ export interface Props {
 
 export interface EditorTab {
   id: string;
-  name: string;
+  name: string | ((index: number) => string);
   language: string;
   contents: string;
   icon?: string;
@@ -196,11 +196,14 @@ export default forwardRef(
       Props,
     ref,
   ) {
+    const tabIndexRef = useRef(0);
     const [tabs, setTabs] = useState<EditorTab[]>(() => {
       // attempt to restore previously-saved tabs, falling back to default
       // if this is the first launch
       const json = globalThis.localStorage.getItem(SAVED_TABS);
-      return json ? JSON.parse(json) : [DEFAULT_TAB];
+      const tabs = json ? JSON.parse(json) : [DEFAULT_TAB];
+      tabIndexRef.current = tabs.length;
+      return tabs;
     });
 
     const [activeTabIndex, setActiveTabIndex] = useState(0);
@@ -244,6 +247,14 @@ export default forwardRef(
         if (tabIndex > -1) {
           setActiveTabIndex(tabIndex);
         } else {
+          // resolve tab name first
+          if (typeof tab.name === "function") {
+            tab.name = tab.name(tabIndexRef.current);
+          }
+
+          // increment tab index whether or not it was used
+          tabIndexRef.current += 1;
+
           // if not, create it first and then switch to it
           newTabs = [...tabs, tab];
           setActiveTabIndex(tabs.length);
@@ -390,7 +401,7 @@ export default forwardRef(
             <div className="flex flex-col h-full">
               <div className="flex bg-base-300">
                 {tabs.length > 1 && tabs.map((tab, idx) => {
-                  const { prefix, name } = formatTabName(tab.name);
+                  const { prefix, name } = formatTabName(tab.name as string);
                   return (
                     <div
                       role="button"

@@ -20,6 +20,7 @@
     "@types/react-dom": "npm:@types/react-dom@^19.0.4",
     "@vitejs/plugin-react": "npm:@vitejs/plugin-react@^4.3.4",
     "daisyui": "npm:daisyui@^5.0.35",
+    "deep-equal": "npm:deep-equal@^2.2.3",
     "monaco-editor": "npm:monaco-editor@^0.52.2",
     "react": "npm:react@^19.0.0",
     "react-dom": "npm:react-dom@^19.0.0",

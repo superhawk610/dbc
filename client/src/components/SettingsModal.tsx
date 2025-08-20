@@ -9,7 +9,13 @@ import Fieldset from "./form/Fieldset.tsx";
 import Field from "./form/Field.tsx";
 import { get, put } from "../api.ts";
 import Config from "../models/config.ts";
-import Connection from "../models/connection.ts";
+import Connection, {
+  connectionColorToClass,
+  loadConnectionColors,
+  saveConnectionColors,
+} from "../models/connection.ts";
+import ColorRadio from "./form/ColorRadio.tsx";
+import deepEqual from "deep-equal";
 
 interface SettingsModalBodyProps {
   actions: ModalActions;
@@ -20,6 +26,13 @@ function SettingsModalBody({ actions, onSave }: SettingsModalBodyProps) {
   const [config, setConfig] = useState<Config | null>(null);
   const [connectionIndex, setConnectionIndex] = useState<number>(-1);
   const [dirty, setDirty] = useState(false);
+
+  if (config) {
+    const colors = loadConnectionColors();
+    config.connections.forEach((conn) => {
+      conn.color = colors[conn.name];
+    });
+  }
 
   const connection = connectionIndex > -1
     ? config?.connections[connectionIndex]
@@ -49,14 +62,14 @@ function SettingsModalBody({ actions, onSave }: SettingsModalBodyProps) {
     const form = new FormData(ev.target as HTMLFormElement);
     const conn: Connection = {
       name: form.get("name") as string,
+      color: form.get("color") as Connection["color"],
       host: form.get("host") as string || "localhost",
       port: Number(form.get("port") || "5432"),
       username: form.get("username") as string,
       password: form.get("password") as string || null,
       password_file: form.get("password_file") as string || null,
       database: form.get("database") as string || "postgres",
-      // FIXME: allow selecting
-      ssl: false,
+      ssl: form.get("ssl") === "on",
     };
 
     if (
@@ -69,16 +82,39 @@ function SettingsModalBody({ actions, onSave }: SettingsModalBodyProps) {
     }
 
     // update config
+    let needsServerUpdate = true;
     const connections = config!.connections.slice();
     if (connectionIndex > -1) {
+      // if nothing changed, don't update the server
+      const newConn = { ...conn, color: null };
+      const oldConn = { ...connections[connectionIndex], color: null };
+      if (deepEqual(newConn, oldConn)) {
+        needsServerUpdate = false;
+      }
+
       connections[connectionIndex] = conn;
     } else {
       connections.push(conn);
     }
+
+    const uniqueNames = connections.map((c) => c.name);
+    if (uniqueNames.length !== new Set(uniqueNames).size) {
+      alert("Connection names must be unique.");
+      return;
+    }
+
     const updatedConfig = { ...config, connections };
 
     // dispatch to server
-    await put("/config", updatedConfig);
+    if (needsServerUpdate) {
+      await put("/config", updatedConfig);
+    }
+
+    // update colors
+    const colors = loadConnectionColors();
+    colors[conn.name] = conn.color;
+    saveConnectionColors(colors);
+
     setConfig(updatedConfig);
     onSave?.(connections);
     closeModal(actions)(ev as React.MouseEvent);
@@ -99,6 +135,15 @@ function SettingsModalBody({ actions, onSave }: SettingsModalBodyProps) {
                 hover:bg-primary/90 hover:text-primary-content
                 ${connection?.name === conn.name ? "bg-primary" : ""}`}
               >
+                {conn.color && (
+                  <span
+                    className={`w-2 h-2 rounded-full inline-block mr-2 ${
+                      connectionColorToClass(
+                        conn.color,
+                      )
+                    }`}
+                  />
+                )}
                 {conn.name}
               </button>
             </li>
@@ -130,6 +175,9 @@ function SettingsModalBody({ actions, onSave }: SettingsModalBodyProps) {
       >
         <Fieldset heading="Connection details">
           <Field name="name" defaultValue={connection?.name} />
+          <div className="-mt-1 mb-8">
+            <ColorRadio name="color" label="Color" color={connection?.color} />
+          </div>
           <Field
             name="host"
             defaultValue={connection?.host}
@@ -152,6 +200,12 @@ function SettingsModalBody({ actions, onSave }: SettingsModalBodyProps) {
             name="database"
             defaultValue={connection?.database}
             label="Database (default: postgres)"
+          />
+          <Field
+            type="checkbox"
+            name="ssl"
+            defaultValue={connection?.ssl}
+            label="Use SSL"
           />
         </Fieldset>
 
