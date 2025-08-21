@@ -202,14 +202,14 @@ function App() {
     dispatchQuery(queryRef.current.query, sort, page, pageSize);
   }, [sort, page, pageSize]);
 
-  function submitQuery() {
+  function submitQuery(withQuery?: string) {
     const contents = editorRef.current!.getContents();
 
     // store the query in local storage to be restored on page reload
     editorRef.current!.saveTabs();
 
     // if the query hasn't changed, just show results
-    const query = editorRef.current!.getActiveQuery() || contents;
+    const query = withQuery || editorRef.current!.getActiveQuery() || contents;
     if (queryRef.current.query === query) {
       setShowResults(true);
     }
@@ -311,7 +311,7 @@ function App() {
 
   function openNewTab() {
     editorRef.current!.openTab({
-      id: `dbc://query/${new Date()}`,
+      id: `dbc://query/${Date.now()}`,
       name: (n: number) => `Query / Script ${n + 1}`,
       language: "sql",
       contents: "",
@@ -346,7 +346,7 @@ function App() {
           connection={connection?.name}
           database={database}
           schema={schema}
-          onClick={submitQuery}
+          onClick={() => submitQuery()}
           onClickLabel="Query ⌘⏎"
           sidebar={
             <div className="w-[300px] flex flex-col">
@@ -479,19 +479,21 @@ function App() {
             onToggleSort={(column_idx, direction) =>
               setSort({ column_idx, direction })}
             onForeignKeyClick={(column, value) => {
+              const query =
+                `SELECT * FROM ${column.fk_table} WHERE ${column.fk_column} = ${
+                  JSON.stringify(value)
+                };`;
+
               editorRef.current!.openTab({
-                id: `dbc://query/${new Date()}`,
+                id: `dbc://query/${Date.now()}`,
                 name: (n: number) => `Query / Script ${n + 1}`,
                 language: "sql",
-                contents:
-                  `SELECT * FROM ${column.fk_table} WHERE ${column.fk_column} = ${
-                    JSON.stringify(value)
-                  };`,
+                contents: query,
                 icon: "database",
               });
 
               // open new tab and submit query
-              // setTimeout(() => submitQuery(), 0);
+              submitQuery(query);
             }}
           />
 

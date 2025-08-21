@@ -10,6 +10,7 @@
     "npm:@vitejs/plugin-react@^4.3.4": "4.3.4_vite@6.2.5_@babel+core@7.26.10_@types+node@22.12.0",
     "npm:daisyui@^5.0.35": "5.0.35",
     "npm:deep-equal@^2.2.3": "2.2.3",
+    "npm:immer@^10.1.1": "10.1.1",
     "npm:monaco-editor@~0.52.2": "0.52.2",
     "npm:normalize.css@^8.0.1": "8.0.1",
     "npm:react-dom@19": "19.1.0_react@19.1.0",
@@ -17,6 +18,7 @@
     "npm:react-icons@^5.5.0": "5.5.0_react@19.1.0",
     "npm:react@19": "19.1.0",
     "npm:tailwindcss@^4.1.2": "4.1.2",
+    "npm:use-immer@0.11": "0.11.0_immer@10.1.1_react@19.1.0",
     "npm:vite@*": "6.2.5_@types+node@22.12.0",
     "npm:vite@^6.1.1": "6.2.5_@types+node@22.12.0"
   },
@@ -859,6 +861,9 @@
         "function-bind"
       ]
     },
+    "immer@10.1.1": {
+      "integrity": "sha512-s2MPrmjovJcoMaHtx6K11Ra7oD05NT97w1IC5zpMkT6Atjr7H8LjaDd81iIxUYpMKSRRNMJE703M1Fhr/TctHw=="
+    },
     "internal-slot@1.1.0": {
       "integrity": "sha512-4gd7VpWNQNB4UKKCFFVcp1AVv+FMOgs9NKzjHKusc8jTMhd5eL1NqQqOpE0KzMds804/yHlglp3uxgluOqAPLw==",
       "dependencies": [
@@ -1276,6 +1281,13 @@
       ],
       "bin": true
     },
+    "use-immer@0.11.0_immer@10.1.1_react@19.1.0": {
+      "integrity": "sha512-RNAqi3GqsWJ4bcCd4LMBgdzvPmTABam24DUaFiKfX9s3MSorNRz9RDZYJkllJoMHUxVLMDetwAuCDeyWNrp1yA==",
+      "dependencies": [
+        "immer",
+        "react"
+      ]
+    },
     "vite@6.2.5": {
       "integrity": "sha512-j023J/hCAa4pRIUH6J9HemwYfjB5llR2Ps0CWeikOtdR8+pAURAk0DoJC5/mm9kd+UgdnIy7d6HE4EAvlYhPhA==",
       "dependencies": [
@@ -1362,12 +1374,14 @@
       "npm:@vitejs/plugin-react@^4.3.4",
       "npm:daisyui@^5.0.35",
       "npm:deep-equal@^2.2.3",
+      "npm:immer@^10.1.1",
       "npm:monaco-editor@~0.52.2",
       "npm:react-dom@19",
       "npm:react-html-props@2.0.10",
       "npm:react-icons@^5.5.0",
       "npm:react@19",
       "npm:tailwindcss@^4.1.2",
+      "npm:use-immer@0.11",
       "npm:vite@^6.1.1"
     ]
   }

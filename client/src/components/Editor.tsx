@@ -5,6 +5,8 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { useImmer } from "use-immer";
+import type { Draft } from "immer";
 import { Editor as MonacoEditor, loader, Monaco } from "@monaco-editor/react";
 import {
   editor as editorNS,
@@ -250,6 +252,11 @@ export interface EditorRef {
   saveTabs: () => void;
 }
 
+interface TabState {
+  tabs: EditorTab[];
+  activeIndex: number;
+}
+
 export default forwardRef(
   function Editor(
     { onClick, onClickLabel, sidebar, toolbar, connection, database, schema }:
@@ -257,17 +264,16 @@ export default forwardRef(
     ref,
   ) {
     const tabIndexRef = useRef(0);
-    const [tabs, setTabs] = useState<EditorTab[]>(() => {
+    const [tabState, setTabState] = useImmer<TabState>(() => {
       // attempt to restore previously-saved tabs, falling back to default
       // if this is the first launch
       const json = globalThis.localStorage.getItem(SAVED_TABS);
       const tabs = json ? JSON.parse(json) : [DEFAULT_TAB];
       tabIndexRef.current = tabs.length;
-      return tabs;
+      return { tabs, activeIndex: 0 };
     });
 
-    const [activeTabIndex, setActiveTabIndex] = useState(0);
-    const activeTab = tabs[activeTabIndex];
+    const activeTab = tabState.tabs[tabState.activeIndex];
 
     const [showEditor, setShowEditor] = useState(false);
     const monacoRef = useRef({ definedThemes: {} } as MonacoRef);
@@ -298,30 +304,34 @@ export default forwardRef(
       insert: (text: string) =>
         monacoRef.current.editor.trigger("keyboard", "type", { text }),
       openTab: (tab: EditorTab) => {
-        // store the current tab's contents before switching tabs
-        tabs[activeTabIndex].contents = monacoRef.current.editor.getValue();
-        let newTabs = tabs;
+        setTabState((draft: Draft<TabState>) => {
+          // store the current tab's contents before switching tabs
+          draft.tabs[draft.activeIndex].contents = monacoRef.current.editor
+            .getValue();
 
-        // check to see if we already have the tab open; if so, just switch to it
-        const tabIndex = tabs.findIndex((t) => t.id === tab.id);
-        if (tabIndex > -1) {
-          setActiveTabIndex(tabIndex);
-        } else {
-          // resolve tab name first
-          if (typeof tab.name === "function") {
-            tab.name = tab.name(tabIndexRef.current);
+          // check to see if we already have the tab open; if so, just switch to it
+          const tabIndex = draft.tabs.findIndex((t) => t.id === tab.id);
+          if (tabIndex > -1) {
+            draft.activeIndex = tabIndex;
+          } else {
+            // resolve tab name first
+            if (typeof tab.name === "function") {
+              tab.name = tab.name(tabIndexRef.current);
+            }
+
+            // increment tab index whether or not it was used
+            tabIndexRef.current += 1;
+
+            // if not, create it first and then switch to it
+            draft.tabs = [...draft.tabs, tab];
+            draft.activeIndex = draft.tabs.length - 1;
           }
 
-          // increment tab index whether or not it was used
-          tabIndexRef.current += 1;
-
-          // if not, create it first and then switch to it
-          newTabs = [...tabs, tab];
-          setActiveTabIndex(tabs.length);
-        }
-
-        setTabs(newTabs);
-        globalThis.localStorage.setItem(SAVED_TABS, JSON.stringify(newTabs));
+          globalThis.localStorage.setItem(
+            SAVED_TABS,
+            JSON.stringify(draft.tabs),
+          );
+        });
       },
       addError: (message: string, position: number) => {
         const model = monacoRef.current.editor.getModel()!;
@@ -342,13 +352,27 @@ export default forwardRef(
       clearErrors: () =>
         monacoRef.current.monaco.editor.removeAllMarkers(OWNER),
       saveTabs: () => {
-        // store the current tab's contents before saving
-        tabs[activeTabIndex].contents = monacoRef.current.editor.getValue();
-        setTabs(tabs);
+        setTabState((draft: Draft<TabState>) => {
+          // store the current tab's contents before saving
+          const tabId = draft.tabs[draft.activeIndex].id;
+          const tabContents = monacoRef.current!.monaco.editor.getModel(
+            Uri.parse(tabId),
+          )?.getValue();
 
-        globalThis.localStorage.setItem(SAVED_TABS, JSON.stringify(tabs));
+          // it's possible the model hasn't been created if this is a tab we
+          // just opened; if that's the case, no need to do anything else
+          if (tabContents) {
+            draft.tabs[draft.activeIndex].contents = tabContents;
+          }
+
+          // persist the current tabs either way
+          globalThis.localStorage.setItem(
+            SAVED_TABS,
+            JSON.stringify(draft.tabs),
+          );
+        });
       },
-    }), [tabs]);
+    }), []);
 
     useEffect(() => {
       (async () => {
@@ -425,24 +449,25 @@ export default forwardRef(
     }
 
     function closeTab(id: string, idx: number) {
-      // remove the closed tab
-      const newTabs = tabs.toSpliced(idx, 1);
-      setTabs(newTabs);
+      setTabState((draft: Draft<TabState>) => {
+        // remove the closed tab
+        draft.tabs.splice(idx, 1);
 
-      // update saved tabs
-      globalThis.localStorage.setItem(SAVED_TABS, JSON.stringify(newTabs));
+        // update saved tabs
+        globalThis.localStorage.setItem(SAVED_TABS, JSON.stringify(draft.tabs));
 
-      // close monaco's underlying model (it may not have been opened yet
-      // if the tab was restored from a previous session)
-      monacoRef.current!.monaco.editor.getModel(Uri.parse(id))?.dispose();
+        // close monaco's underlying model (it may not have been opened yet
+        // if the tab was restored from a previous session)
+        monacoRef.current!.monaco.editor.getModel(Uri.parse(id))?.dispose();
 
-      if (idx < activeTabIndex) {
-        // if we closed a tab to the left, decrement the active index
-        setActiveTabIndex(activeTabIndex - 1);
-      } else if (idx === tabs.length - 1) {
-        // if we closed the rightmost tab, shift one to the left
-        setActiveTabIndex(idx - 1);
-      }
+        if (idx < draft.activeIndex) {
+          // if we closed a tab to the left, decrement the active index
+          draft.activeIndex -= 1;
+        } else if (idx === draft.tabs.length) {
+          // if we closed the rightmost tab, shift one to the left
+          draft.activeIndex -= 1;
+        }
+      });
     }
 
     function formatTabName(tabName: string) {
@@ -468,7 +493,7 @@ export default forwardRef(
           <div className="flex-1 border-l-2 border-base-content/10">
             <div className="flex flex-col h-full">
               <div className="flex bg-base-300">
-                {tabs.length > 1 && tabs.map((tab, idx) => {
+                {tabState.tabs.length > 1 && tabState.tabs.map((tab, idx) => {
                   const { prefix, name } = formatTabName(tab.name as string);
                   return (
                     <div
@@ -478,17 +503,19 @@ export default forwardRef(
                       flex items-center px-3 py-1.5 text-xs cursor-pointer
                       border-r border-base-content/10
                     ${
-                        idx === activeTabIndex
+                        idx === tabState.activeIndex
                           ? "bg-primary text-primary-content hover:bg-primary/90"
                           : "bg-base-100 hover:bg-base-100/70"
                       }`}
                       onClick={() => {
-                        // store the current tab's contents before switching tabs
-                        tabs[activeTabIndex].contents = monacoRef.current.editor
-                          .getValue();
+                        setTabState((draft: Draft<TabState>) => {
+                          // store the current tab's contents before switching tabs
+                          draft.tabs[draft.activeIndex].contents = monacoRef
+                            .current.editor
+                            .getValue();
 
-                        setTabs(tabs);
-                        setActiveTabIndex(idx);
+                          draft.activeIndex = idx;
+                        });
                       }}
                     >
                       <div className="mr-1">
@@ -505,7 +532,7 @@ export default forwardRef(
                       <button
                         type="button"
                         className={`cursor-pointer px-1 ml-auto -mr-1 ${
-                          idx === activeTabIndex
+                          idx === tabState.activeIndex
                             ? "text-primary-content/60"
                             : "text-base-content/60"
                         }`}
