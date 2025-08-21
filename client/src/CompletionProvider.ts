@@ -7,6 +7,9 @@ import {
 } from "monaco-editor";
 import { get } from "./api.ts";
 import Table from "./models/table.ts";
+import Schema from "./models/schema.ts";
+
+const CACHE_TIMEOUT_SECS = 5 * 60;
 
 export interface DbcCompletionProviderContext {
   connection: string | null | undefined;
@@ -14,7 +17,9 @@ export interface DbcCompletionProviderContext {
   schema: string | null;
 }
 
-// TODO: cache completion items
+const unquote = (str: string) =>
+  (str.startsWith('"') && str.endsWith('"')) ? str.slice(1, -1) : str;
+
 export default class DbcCompletionProvider
   implements languages.CompletionItemProvider {
   readonly triggerCharacters = [" ", "."];
@@ -87,17 +92,32 @@ export default class DbcCompletionProvider
           const abort = new AbortController();
           token.onCancellationRequested(() => abort.abort());
 
-          const tables = await get<Table[]>(
-            `/db/schemas/${this.context.schema}/tables`,
-            undefined,
-            {
-              signal: abort.signal,
-              headers: {
-                "x-conn-name": this.context.connection,
-                "x-database": this.context.database,
+          const [tables, schemas] = await Promise.all([
+            get<Table[]>(
+              `/db/schemas/${this.context.schema}/tables`,
+              undefined,
+              {
+                signal: abort.signal,
+                cacheTimeoutSec: CACHE_TIMEOUT_SECS,
+                headers: {
+                  "x-conn-name": this.context.connection,
+                  "x-database": this.context.database,
+                },
               },
-            },
-          );
+            ),
+            get<Schema[]>(
+              `/db/schemas`,
+              undefined,
+              {
+                signal: abort.signal,
+                cacheTimeoutSec: CACHE_TIMEOUT_SECS,
+                headers: {
+                  "x-conn-name": this.context.connection,
+                  "x-database": this.context.database,
+                },
+              },
+            ),
+          ]);
 
           completion.suggestions.push(...tables.map((table) => ({
             label: table.table_name,
@@ -105,48 +125,54 @@ export default class DbcCompletionProvider
             kind: languages.CompletionItemKind.Field,
             range: Range.fromPositions(position, position),
           })));
+
+          completion.suggestions.push(...schemas.map((schema) => ({
+            label: schema.schema_name,
+            insertText: schema.schema_name,
+            kind: languages.CompletionItemKind.Module,
+            range: Range.fromPositions(position, position),
+          })));
         }
 
         break;
       }
 
-      // FIXME: this isn't the right behaviour; if the prior token is a _schema name_,
-      // provide available table names in that schema; column completions should be
-      // given when editing the `select` clause and the table source was already given
-      //
-      // if prior token is a table name, list columns
+      // if prior token is a schema name, list tables in that schema
       case ".": {
-        // const offset = model.getOffsetAt(position);
-        // const contents = model.getValue();
+        const offset = model.getOffsetAt(position);
+        const contents = model.getValue();
 
-        // // move backwards until whitespace is encountered
-        // let prevTokenStart = offset - 1;
-        // for (; prevTokenStart >= 0; prevTokenStart--) {
-        //   const char = contents[prevTokenStart];
-        //   if (char === " " || char === "\n") break;
-        // }
+        // move backwards until whitespace is encountered
+        let prevTokenStart = offset - 1;
+        for (; prevTokenStart >= 0; prevTokenStart--) {
+          const char = contents[prevTokenStart];
+          if (char === " " || char === "\n") break;
+        }
 
-        // // TODO: validate whether previous token is table name
-        // const prevToken = contents.slice(prevTokenStart + 1, offset - 1);
+        const prevToken = contents.slice(prevTokenStart + 1, offset - 1);
 
-        // const abort = new AbortController();
-        // token.onCancellationRequested(() => abort.abort());
+        const abort = new AbortController();
+        token.onCancellationRequested(() => abort.abort());
 
-        // const columns = await get<string[]>(
-        //   `/db/schemas/${this.context.schema}/tables/${prevToken}/columns`,
-        //   undefined,
-        //   {
-        //     signal: abort.signal,
-        //     headers: { "x-conn-name": this.context.connection },
-        //   },
-        // );
+        const tables = await get<Table[]>(
+          `/db/schemas/${unquote(prevToken)}/tables`,
+          undefined,
+          {
+            signal: abort.signal,
+            cacheTimeoutSec: CACHE_TIMEOUT_SECS,
+            headers: {
+              "x-conn-name": this.context.connection,
+              "x-database": this.context.database,
+            },
+          },
+        );
 
-        // completion.suggestions.push(...columns.map((column) => ({
-        //   label: column,
-        //   insertText: column,
-        //   kind: languages.CompletionItemKind.Variable,
-        //   range: Range.fromPositions(position, position),
-        // })));
+        completion.suggestions.push(...tables.map((table) => ({
+          label: table.table_name,
+          insertText: table.table_name,
+          kind: languages.CompletionItemKind.Field,
+          range: Range.fromPositions(position, position),
+        })));
 
         break;
       }

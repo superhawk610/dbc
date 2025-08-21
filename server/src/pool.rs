@@ -210,10 +210,15 @@ impl ConnectionPool {
 
     pub async fn debug(&self) -> String {
         let inner = self.inner.lock().await;
+
+        let live = inner.live;
         let pool_size = inner.config.pool_size;
         let available = inner.conns.len();
         let checked_out = pool_size - available;
-        format!("checked_out={checked_out}, available={available}, pool_size={pool_size}")
+
+        format!(
+            "live={live}, checked_out={checked_out}, available={available}, pool_size={pool_size}"
+        )
     }
 }
 

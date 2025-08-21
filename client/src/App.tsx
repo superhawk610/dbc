@@ -65,7 +65,6 @@ function App() {
   const [sort, setSort] = useState<Sort | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
-  const [query, setQuery] = useState<string | null>(null);
   const queryRef = useRef({} as LastQuery);
 
   useResize({
@@ -196,7 +195,54 @@ function App() {
     })();
   }, [connection, database, schema]);
 
-  async function dispatchQuery(query: string, page: number, pageSize: number) {
+  useEffect(() => {
+    // if there's no query, do nothing
+    if (!queryRef.current.query) return;
+
+    dispatchQuery(queryRef.current.query, sort, page, pageSize);
+  }, [sort, page, pageSize]);
+
+  function submitQuery() {
+    const contents = editorRef.current!.getContents();
+
+    // store the query in local storage to be restored on page reload
+    editorRef.current!.saveTabs();
+
+    // if the query hasn't changed, just show results
+    const query = editorRef.current!.getActiveQuery() || contents;
+    if (queryRef.current.query === query) {
+      setShowResults(true);
+    }
+
+    // reset to the first page and unsorted results on submit
+    setPage(1);
+    setSort(null);
+    dispatchQuery(query, null, 1, pageSize, !useCache);
+  }
+
+  async function dispatchQuery(
+    query: string,
+    sort: Sort | null,
+    page: number,
+    pageSize: number,
+    force?: boolean,
+  ) {
+    // if nothing has changed, do nothing
+    if (
+      !force &&
+      queryRef.current.query === query &&
+      queryRef.current.sort === sort &&
+      queryRef.current.page === page &&
+      queryRef.current.pageSize === pageSize
+    ) {
+      return;
+    }
+
+    queryRef.current.query = query;
+    queryRef.current.sort = sort;
+    queryRef.current.page = page;
+    queryRef.current.pageSize = pageSize;
+
     // show results pane
     setShowResults(true);
 
@@ -249,49 +295,6 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }
-
-  useEffect(() => {
-    // if there's no query, do nothing
-    if (!query) return;
-
-    // if nothing has changed, do nothing
-    if (
-      queryRef.current.connection === connection?.name &&
-      queryRef.current.query === query &&
-      queryRef.current.sort === sort &&
-      queryRef.current.page === page &&
-      queryRef.current.pageSize === pageSize
-    ) {
-      return;
-    }
-
-    queryRef.current = {
-      connection: connection?.name,
-      query,
-      sort,
-      page,
-      pageSize,
-    };
-    dispatchQuery(query, page, pageSize);
-  }, [connection, query, sort, page, pageSize]);
-
-  function submitQuery() {
-    const contents = editorRef.current!.getContents();
-
-    // store the query in local storage to be restored on page reload
-    editorRef.current!.saveTabs();
-
-    // if the query hasn't changed, just show results
-    const newQuery = editorRef.current!.getActiveQuery() || contents;
-    if (newQuery !== query) {
-      setQuery(newQuery);
-    } else {
-      setShowResults(true);
-    }
-
-    // reset to first page
-    setPage(1);
   }
 
   function handleSave(updatedConnections: Connection[]) {
@@ -418,10 +421,9 @@ function App() {
                   onSelect={(name) => {
                     setConnection(connections.find((c) => c.name === name)!);
 
-                    // reset database/schema/query when connection changes
+                    // reset database/schema when connection changes
                     setDatabase(null);
                     setSchema(null);
-                    setQuery(null);
                   }}
                   onManageConnections={() => setSettingsModalsActive(true)}
                 />
@@ -493,7 +495,7 @@ function App() {
             }}
           />
 
-          {res && (
+          {res && res.total_count > 0 && (
             <Pagination
               query={res}
               page={page}

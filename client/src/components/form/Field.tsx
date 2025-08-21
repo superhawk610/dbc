@@ -25,9 +25,9 @@ export default function Field(
 ) {
   return (
     <label
-      className={type === "text"
-        ? "floating-label"
-        : `ml-2 block text-nowrap ${size === "xs" ? "text-xs" : ""}`}
+      className={type === "checkbox"
+        ? `ml-2 block text-nowrap ${size === "xs" ? "text-xs" : ""}`
+        : "floating-label"}
     >
       <span>{label}</span>
       {type === "checkbox"
