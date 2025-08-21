@@ -442,7 +442,7 @@ function App() {
                   onSelect={setSchema}
                 />
               )}
-              <div className="-ml-2 text-neutral">
+              <div className="-ml-2">
                 <Field
                   size="xs"
                   name="useCache"

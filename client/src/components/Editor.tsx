@@ -38,7 +38,14 @@ import themeCatppuccinMocha from "../themes/catppuccin-mocha.json" with {
 const OWNER = "dbc";
 export const SAVED_TABS = "savedTabs";
 
-const THEME_LIST_JSON = "https://unpkg.com/monaco-themes/themes/themelist.json";
+// FIXME: cache this during build or something
+// unkpg seems to throttle when it sees too many requests or something, because
+// bundled builds take ~13 seconds to load and it's just blocked on this call
+// const THEME_LIST_JSON = "https://unpkg.com/monaco-themes/themes/themelist.json";
+import themeListJson from "../themes/monaco-themes/themelist.json" with {
+  type: "json",
+};
+const THEME_LIST_JSON = themeListJson;
 
 const DEFAULT_THEMES = {
   "vs-dark": "Default (Dark)",
@@ -351,19 +358,21 @@ export default forwardRef(
 
         monacoRef.current.monaco = await loader.init();
 
-        const res = await fetch(THEME_LIST_JSON);
-        const data = await res.json();
-        const themes = {
+        // const res = await fetch(THEME_LIST_JSON);
+        // const data = await res.json();
+        const data = THEME_LIST_JSON;
+
+        const themes: Record<string, string | null> = {
           ...DEFAULT_THEMES,
-          "custom": null,
+          "-- custom --": null,
           ...CUSTOM_THEMES,
-          "monaco-themes": null,
+          "-- monaco-themes --": null,
           ...data,
         };
         setThemes(themes);
 
         // fetch the active theme, in case it's not already cached
-        await fetchTheme(activeTheme, themes[activeTheme], monacoRef.current);
+        await fetchTheme(activeTheme, themes[activeTheme]!, monacoRef.current);
 
         // register completion provider
         monacoRef.current.monaco.languages.registerCompletionItemProvider(
