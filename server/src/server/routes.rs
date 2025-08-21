@@ -28,22 +28,14 @@ pub async fn format_eyre<E: poem::Endpoint>(
 }
 
 #[poem::handler]
-pub async fn websocket(
-    ws: WebSocket,
-    Path(channel): Path<String>,
-    Data(state): Data<&Arc<crate::State>>,
-) -> impl IntoResponse {
-    dbg!(channel);
-
+pub async fn websocket(ws: WebSocket, Path(channel): Path<String>) -> impl IntoResponse {
     let (tx, mut rx) = tokio::sync::mpsc::channel(100);
-    let mut worker = state.worker.lock().await;
-    worker.subscribe(tx).await.unwrap();
+    crate::stream::subscribe(tx).await.unwrap();
 
     ws.on_upgrade(|mut socket| async move {
         // use futures_util::StreamExt;
         // if let Some(Ok(Message::Text(text))) = socket.next().await {
         //     dbg!(text);
-
         //     let _ = socket.send(Message::Text("hello, world!".into())).await;
         // }
 
@@ -83,9 +75,7 @@ pub async fn update_config(
     config.persist().unwrap();
 
     // TODO: only changed connections should restart their pools
-    state
-        .broadcast("Settings updated, restarting active connections...")
-        .await;
+    crate::stream::broadcast("Settings updated, restarting active connections...").await;
 
     let mut pools = state.pools.lock().await;
     let mut close_pools = HashSet::new();
@@ -98,11 +88,11 @@ pub async fn update_config(
             // if the connection is still present in the config, reload the pool
             Some(conn) => {
                 if let Some(stderr) = conn.load_password().await? {
-                    state.broadcast(stderr).await;
+                    crate::stream::broadcast(stderr).await;
                 }
 
                 if let Err(err) = pool.reload((&*conn).into()).await {
-                    state.broadcast(err.to_string()).await;
+                    crate::stream::broadcast(err.to_string()).await;
                 }
             }
 
@@ -116,7 +106,7 @@ pub async fn update_config(
     // close any connection pools that are no longer active
     pools.retain(|k, _| !close_pools.contains(&k.connection));
 
-    state.broadcast("Done!").await;
+    crate::stream::broadcast("Done!").await;
 
     Ok(poem::http::StatusCode::NO_CONTENT)
 }

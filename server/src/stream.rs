@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use tokio::sync::mpsc::{Sender, channel, error::TrySendError};
 
 pub struct StreamWorker {
@@ -7,6 +9,35 @@ pub struct StreamWorker {
 pub enum WorkerMessage {
     Subscribe(Sender<String>),
     Broadcast(String),
+}
+
+impl WorkerMessage {
+    pub fn into_message(self) -> String {
+        match self {
+            WorkerMessage::Broadcast(msg) => msg,
+            WorkerMessage::Subscribe(_) => panic!("subscribe has no message"),
+        }
+    }
+}
+
+static GLOBAL: OnceLock<StreamWorker> = OnceLock::new();
+
+pub fn init() {
+    GLOBAL.get_or_init(|| StreamWorker::new());
+}
+
+pub fn global() -> &'static StreamWorker {
+    GLOBAL.get().expect("stream::init() must be called first")
+}
+
+pub async fn subscribe(tx: Sender<String>) -> Result<(), ()> {
+    global().subscribe(tx).await
+}
+
+pub async fn broadcast<S: Into<String>>(msg: S) {
+    if let Err(msg) = global().broadcast(msg.into()).await {
+        tracing::error!("Failed to broadcast message: {msg}");
+    }
 }
 
 impl StreamWorker {
@@ -61,17 +92,19 @@ impl StreamWorker {
         Self { tx }
     }
 
-    pub async fn subscribe(&mut self, tx: Sender<String>) -> Result<(), ()> {
+    /// Subscribe to messages from the stream.
+    pub async fn subscribe(&self, tx: Sender<String>) -> Result<(), ()> {
         self.tx
             .send(WorkerMessage::Subscribe(tx))
             .await
             .map_err(|_| ())
     }
 
-    pub async fn broadcast(&mut self, msg: String) -> Result<(), ()> {
+    /// Broadcast a message to all subscribers. On failure, returns the message that failed to send.
+    pub async fn broadcast(&self, msg: String) -> Result<(), String> {
         self.tx
             .send(WorkerMessage::Broadcast(msg))
             .await
-            .map_err(|_| ())
+            .map_err(|err| err.0.into_message())
     }
 }

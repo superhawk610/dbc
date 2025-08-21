@@ -119,6 +119,7 @@ impl ConnectionPool {
             loop {
                 if let Err(_) = tokio::time::timeout(idle_timeout, not_idle_rx.recv()).await {
                     tracing::info!("pool idle timeout reached, shutting down...");
+                    crate::stream::broadcast("pool idle timeout reached, shutting down...").await;
                     let mut inner = inner.lock().await;
                     inner.go_dormant().await;
                     break;
@@ -163,6 +164,8 @@ impl ConnectionPool {
         // do this without dropping `inner` so that we keep the mutex lock
         // and don't recurse infinitely
         if !inner.live {
+            tracing::debug!("pool is dormant, reloading...");
+            crate::stream::broadcast("pool is dormant, reloading...").await;
             inner.init().await?;
             drop(inner);
 
@@ -192,6 +195,8 @@ impl ConnectionPool {
 
     /// Drop all existing connections in the pool and replace them with new connections.
     pub async fn reload(&mut self, updated_config: db::Config) -> eyre::Result<()> {
+        tracing::debug!("reloading pool");
+
         let mut inner = self.inner.lock().await;
         inner.config = updated_config;
         inner.conns.clear();

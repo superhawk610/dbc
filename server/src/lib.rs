@@ -20,7 +20,6 @@ pub struct ConnectionKey {
 pub struct State {
     pub pools: Mutex<HashMap<ConnectionKey, pool::ConnectionPool>>,
     pub config: RwLock<persistence::Store>,
-    pub worker: Mutex<stream::StreamWorker>,
 }
 
 impl State {
@@ -65,7 +64,7 @@ impl State {
             conn_key.database, conn_key.connection
         );
         tracing::info!("{msg}");
-        self.broadcast(msg).await;
+        crate::stream::broadcast(msg).await;
 
         // if not, spawn a new connection pool
         let config = self.config.read().await;
@@ -79,12 +78,11 @@ impl State {
 
         // load password (run `password_file` if required)
         if let Some(p) = connection.password_file() {
-            self.broadcast(format!("Fetching password via \"{}\":\n", p))
-                .await;
+            crate::stream::broadcast(format!("Fetching password via \"{}\":\n", p)).await;
         }
         let stderr = dbg!(connection.load_password().await)?;
         if let Some(stderr) = stderr {
-            self.broadcast(stderr).await;
+            crate::stream::broadcast(stderr).await;
         }
 
         let cfg = crate::db::Config::from(&connection);
@@ -92,12 +90,12 @@ impl State {
             Ok(mut pool) => {
                 let pool_size = pool.pool_size().await;
                 tracing::info!("Success! {pool_size} connections in pool.");
-                self.broadcast(format!("Success! {pool_size} connections in pool."))
+                crate::stream::broadcast(format!("Success! {pool_size} connections in pool."))
                     .await;
 
                 let conn = pool.get_conn().await?;
                 let version_info = crate::db::version_info(&conn).await?;
-                self.broadcast(version_info).await;
+                crate::stream::broadcast(version_info).await;
 
                 let mut entry = pools.entry(conn_key).insert_entry(pool);
                 entry.get_mut().get_conn().await
@@ -105,18 +103,10 @@ impl State {
 
             Err(err) => {
                 tracing::error!("Error opening connection: {err}");
-                self.broadcast(format!("Failed to open connection\n{err}"))
-                    .await;
+                crate::stream::broadcast(format!("Failed to open connection\n{err}")).await;
                 Err(err)
             }
         }
-    }
-
-    /// Shortcut for `self.worker.broadcast(message)`. This will acquire and then
-    /// drop the worker's mutex internally, so avoid calling this from a loop.
-    pub async fn broadcast(&self, message: impl Into<String>) {
-        let mut worker = self.worker.lock().await;
-        worker.broadcast(message.into()).await.unwrap();
     }
 
     /// Print a debug representation of the application state. This has to

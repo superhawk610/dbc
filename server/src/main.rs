@@ -19,7 +19,7 @@ async fn main() -> eyre::Result<()> {
         .init();
 
     // start up stream worker
-    let worker = dbc::stream::StreamWorker::new();
+    dbc::stream::init();
 
     #[cfg(feature = "bundle")]
     let encryption_key = Some(dotenv_codegen::dotenv!("ENCRYPTION_KEY"));
@@ -62,7 +62,6 @@ async fn main() -> eyre::Result<()> {
     let state = Arc::new(dbc::State {
         pools: Mutex::new(HashMap::new()),
         config: RwLock::new(store),
-        worker: Mutex::new(worker),
     });
 
     use dbc::server::routes;
