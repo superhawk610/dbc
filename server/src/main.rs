@@ -34,7 +34,6 @@ async fn main() -> eyre::Result<()> {
 
     // initialize store and load default connection if none are present
     let mut store = dbc::persistence::Store::load().unwrap();
-    dbg!(&store);
     if store.connections.is_empty() {
         let db_host = std::env::var("DB_HOST").expect("DB_HOST is set");
         let db_port = std::env::var("DB_PORT")

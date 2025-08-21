@@ -2,11 +2,31 @@
  * Shim for `window.localStorage` that persists via server calls to `wry` window.
  */
 class LocalStorageShim {
-  state: Record<string, string>;
+  private state: Record<string, string>;
 
   constructor(state: Record<string, string>) {
     this.state = state;
-    console.log(this.state);
+
+    return new Proxy(this, {
+      get: (target, key) => {
+        if (typeof key === "number") {
+          return target.index(key);
+        }
+        return target[key as keyof this];
+      },
+    });
+  }
+
+  get length() {
+    return Object.keys(this.state).length;
+  }
+
+  index(i: number) {
+    return this.state[Object.keys(this.state)[i]];
+  }
+
+  key(i: number) {
+    return Object.keys(this.state)[i];
   }
 
   getItem(key: string) {
@@ -15,27 +35,27 @@ class LocalStorageShim {
 
   setItem(key: string, value: string) {
     this.state[key] = value;
-    this.#persist();
+    persist(this.state);
   }
 
   deleteItem(key: string) {
     delete this.state[key];
-    this.#persist();
+    persist(this.state);
   }
 
   clear() {
     this.state = {};
-    this.#persist();
+    persist(this.state);
   }
+}
 
-  async #persist() {
-    await fetch(`/_wry/localStorage`, {
-      mode: "cors",
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(this.state),
-    });
-  }
+async function persist(state: Record<string, string>) {
+  await fetch(`/_wry/localStorage`, {
+    mode: "cors",
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(state),
+  });
 }
 
 // When running bundled, persist local storage via backend.

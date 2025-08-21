@@ -30,7 +30,11 @@ export default function QueryResults(
   }
 
   if (!page) {
-    return <p className="mt-4 px-6 text-sm">No results.</p>;
+    return (
+      <p className={`mt-4 px-6 text-sm ${loading ? "opacity-30" : ""}`}>
+        No results.
+      </p>
+    );
   }
 
   return (

@@ -1,8 +1,11 @@
 export interface Props {
   name: string;
   type?: string;
+  size?: "md" | "xs";
   label?: string;
-  defaultValue?: string | number | null | boolean;
+  defaultValue?: string | number | null;
+  defaultChecked?: boolean;
+  onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
 
 function capitalize(str: string) {
@@ -10,19 +13,31 @@ function capitalize(str: string) {
 }
 
 export default function Field(
-  { name, type = "text", label = capitalize(name), defaultValue }: Props,
+  {
+    name,
+    type = "text",
+    size = "md",
+    label = capitalize(name),
+    defaultValue,
+    defaultChecked,
+    onChange,
+  }: Props,
 ) {
   return (
-    <label className={type === "checkbox" ? "ml-2" : "floating-label"}>
+    <label
+      className={type === "text"
+        ? "floating-label"
+        : `ml-2 ${size === "xs" ? "text-xs" : ""}`}
+    >
       <span>{label}</span>
       {type === "checkbox"
         ? (
           <input
             type="checkbox"
             name={name}
-            className="checkbox ml-2"
-            defaultChecked={defaultValue as (boolean | null | undefined) ||
-              undefined}
+            className={`ml-2 checkbox ${size === "xs" ? "checkbox-xs" : ""}`}
+            defaultChecked={defaultChecked}
+            onChange={onChange}
           />
         )
         : (
@@ -31,12 +46,8 @@ export default function Field(
             placeholder={label}
             className="input input-md w-full"
             name={name}
-            defaultValue={defaultValue as (
-              | string
-              | number
-              | null
-              | undefined
-            ) || undefined}
+            defaultValue={defaultValue || undefined}
+            onChange={onChange}
           />
         )}
     </label>

@@ -3,7 +3,13 @@ import {
   HiDocumentAdd as NewTabIcon,
   HiViewList as ListIcon,
 } from "react-icons/hi";
-import { get, paginatedQuery, rawDefaultQuery, rawQuery } from "./api.ts";
+import {
+  clearNetworkCache,
+  get,
+  paginatedQuery,
+  rawDefaultQuery,
+  rawQuery,
+} from "./api.ts";
 
 import useResize from "./hooks/useResize.ts";
 import Navbar from "./components/Navbar.tsx";
@@ -23,6 +29,7 @@ import Schema from "./models/schema.ts";
 import Table from "./models/table.ts";
 import SettingsModal from "./components/SettingsModal.tsx";
 import useConnectionVersion from "./hooks/useConnectionVersion.ts";
+import Field from "./components/form/Field.tsx";
 
 const EDITOR_HEIGHT = { min: 100, default: 400 };
 
@@ -44,6 +51,7 @@ function App() {
   const [res, setRes] = useState<PaginatedQueryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [useCache, setUseCache] = useState(true);
 
   const [connections, setConnections] = useState<Connection[] | null>(null);
   const [connection, setConnection] = useState<Connection | null>(null);
@@ -107,11 +115,6 @@ function App() {
     if (!connection) return;
 
     (async () => {
-      // reset database/schema/query when connection changes
-      setDatabase(null);
-      setSchema(null);
-      setQuery(null);
-
       try {
         setError(null);
         setLoading(true);
@@ -207,16 +210,22 @@ function App() {
       const res = await paginatedQuery(
         connection!.name,
         database!,
-        query,
-        sort,
-        page,
-        pageSize,
+        {
+          query,
+          sort,
+          page,
+          pageSize,
+          useCache,
+        },
       );
 
       setRes(res);
 
       // if the statement contained DDL, refresh the table view
+      // and clear the network cache
       if (res.entries.is_ddl) {
+        clearNetworkCache();
+
         const tables = await rawQuery<Table[]>(
           connection!.name,
           database!,
@@ -406,8 +415,14 @@ function App() {
                 <ConnectionSelect
                   connections={connections}
                   selected={connection?.name}
-                  onSelect={(name) =>
-                    setConnection(connections.find((c) => c.name === name)!)}
+                  onSelect={(name) => {
+                    setConnection(connections.find((c) => c.name === name)!);
+
+                    // reset database/schema/query when connection changes
+                    setDatabase(null);
+                    setSchema(null);
+                    setQuery(null);
+                  }}
                   onManageConnections={() => setSettingsModalsActive(true)}
                 />
               )}
@@ -427,6 +442,16 @@ function App() {
                   onSelect={setSchema}
                 />
               )}
+              <div className="-ml-2 text-neutral">
+                <Field
+                  size="xs"
+                  name="useCache"
+                  type="checkbox"
+                  label="Use Cache?"
+                  defaultChecked={useCache}
+                  onChange={(ev) => setUseCache(ev.target.checked)}
+                />
+              </div>
             </>
           }
         />
