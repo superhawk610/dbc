@@ -28,6 +28,16 @@ export function clearNetworkCache() {
   }
 }
 
+export class NetworkError extends Error {
+  constructor(
+    public type: "json" | "text",
+    message: string,
+    public details?: Record<string, string | number | null>,
+  ) {
+    super(message);
+  }
+}
+
 export interface RequestOpts {
   headers?: Record<string, string>;
   signal?: AbortSignal;
@@ -78,7 +88,25 @@ const req = (method: string) => {
     });
 
     if (!response.ok) {
-      throw new Error(await response.text());
+      if (response.headers.get("content-type") === "application/json") {
+        const json = await response.json();
+
+        let message: string;
+        switch (json.type) {
+          case "PgError":
+            message = `${json.severity} ${json.code}: ${json.message}`;
+            if (json.position) message += ` (at position ${json.position})`;
+            break;
+
+          default:
+            console.warn("no message formatting defined for", json.type);
+            message = JSON.stringify(json);
+        }
+
+        throw new NetworkError("json", message, json);
+      }
+
+      throw new NetworkError("text", await response.text());
     }
 
     let res: T;

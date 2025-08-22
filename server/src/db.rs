@@ -615,9 +615,9 @@ pub async fn paginated_query(
     page_size: usize,
     sort: Option<Sort>,
 ) -> eyre::Result<PaginatedQueryResult> {
-    fn indent(s: &str) -> String {
-        format!("  {}", s.replace('\n', "\n  "))
-    }
+    // fn indent(s: &str) -> String {
+    //     format!("  {}", s.replace('\n', "\n  "))
+    // }
 
     let base_query = parse_query(raw_query);
 
@@ -636,7 +636,10 @@ pub async fn paginated_query(
         });
     }
 
-    let base_query = indent(&base_query);
+    // TODO: indent in logging only; we need the un-indented query to have
+    // error posititions reported correctly
+    // let base_query = indent(&base_query);
+
     let count_query = format!("SELECT COUNT(*) FROM (\n{base_query}\n) _;");
 
     let limit = page_size;
@@ -649,8 +652,28 @@ pub async fn paginated_query(
     );
 
     let (mut result, count_result) = futures_util::future::try_join(
-        query(client, &page_query, params),
-        query(client, &count_query, params),
+        async {
+            query(client, &page_query, params).await.map_err(|err| {
+                match err.downcast::<PgError>() {
+                    Ok(mut err) => {
+                        err.offset_position(-16);
+                        eyre::eyre!(err)
+                    }
+                    Err(err) => err,
+                }
+            })
+        },
+        async {
+            query(client, &count_query, params).await.map_err(|err| {
+                match err.downcast::<PgError>() {
+                    Ok(mut err) => {
+                        err.offset_position(-23);
+                        eyre::eyre!(err)
+                    }
+                    Err(err) => err,
+                }
+            })
+        },
     )
     .await?;
 
@@ -758,7 +781,7 @@ async fn raw_query(
 }
 
 #[derive(Debug)]
-struct PgError {
+pub struct PgError {
     source: tokio_postgres::error::Error,
     inner: Option<PgErrorInner>,
 }
@@ -769,6 +792,31 @@ struct PgErrorInner {
     message: String,
     severity: String,
     position: Option<u32>,
+}
+
+impl PgError {
+    pub fn code(&self) -> Option<&String> {
+        self.inner.as_ref().map(|inner| &inner.code)
+    }
+
+    pub fn message(&self) -> Option<&String> {
+        self.inner.as_ref().map(|inner| &inner.message)
+    }
+
+    pub fn severity(&self) -> Option<&String> {
+        self.inner.as_ref().map(|inner| &inner.severity)
+    }
+
+    pub fn position(&self) -> Option<u32> {
+        self.inner.as_ref().and_then(|inner| inner.position)
+    }
+
+    pub fn offset_position(&mut self, offset_by: i32) {
+        self.inner
+            .as_mut()
+            .and_then(|inner| inner.position.as_mut())
+            .map(|pos| *pos = ((*pos as i32) + offset_by) as u32);
+    }
 }
 
 impl std::error::Error for PgError {

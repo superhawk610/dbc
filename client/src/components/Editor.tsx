@@ -217,10 +217,19 @@ function textInLineRange(
   return lines.slice(range.startLineNumber - 1, range.endLineNumber).join("\n");
 }
 
-function activeQuery(editor: editorNS.IStandaloneCodeEditor): string | null {
+function activeQuery(
+  editor: editorNS.IStandaloneCodeEditor,
+): { query: string; offset: number } | null {
   const position = editor.getPosition();
   const range = position ? activeQueryRange(editor, position) : null;
-  return range ? textInLineRange(editor, range) : null;
+  return range
+    ? {
+      query: textInLineRange(editor, range),
+      offset: editor.getModel()!.getOffsetAt(
+        new Position(range.startLineNumber, range.startColumn),
+      ),
+    }
+    : null;
 }
 
 export interface Props {
@@ -243,11 +252,11 @@ export interface EditorTab {
 
 export interface EditorRef {
   getContents: () => string;
-  getActiveQuery: () => string;
+  getActiveQuery: () => { query: string; offset: number } | null;
   focus: () => void;
   insert: (text: string) => void;
   openTab: (tab: EditorTab) => void;
-  addError: (message: string, position: number) => void;
+  addError: (message: string, position: number, fromOffset?: number) => void;
   clearErrors: () => void;
   saveTabs: () => void;
 }
@@ -333,9 +342,9 @@ export default forwardRef(
           );
         });
       },
-      addError: (message: string, position: number) => {
+      addError: (message: string, position: number, fromOffset?: number) => {
         const model = monacoRef.current.editor.getModel()!;
-        const pos = model.getPositionAt(position);
+        const pos = model.getPositionAt((fromOffset ?? 0) + position);
         const range = new Range(
           pos.lineNumber,
           pos.column - 1,

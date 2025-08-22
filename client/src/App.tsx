@@ -6,6 +6,7 @@ import {
 import {
   clearNetworkCache,
   get,
+  NetworkError,
   paginatedQuery,
   rawDefaultQuery,
   rawQuery,
@@ -204,13 +205,24 @@ function App() {
   }, [sort, page, pageSize]);
 
   function submitQuery(withQuery?: string) {
-    const contents = editorRef.current!.getContents();
-
     // store the query in local storage to be restored on page reload
     editorRef.current!.saveTabs();
 
     // if the query hasn't changed, just show results
-    const query = withQuery || editorRef.current!.getActiveQuery() || contents;
+    let query: string;
+    let offset: number | undefined = undefined;
+    if (withQuery) {
+      query = withQuery;
+    } else {
+      const activeQuery = editorRef.current!.getActiveQuery();
+      if (activeQuery) {
+        query = activeQuery.query;
+        offset = activeQuery.offset;
+      } else {
+        query = editorRef.current!.getContents();
+      }
+    }
+
     if (queryRef.current.query === query) {
       setShowResults(true);
     }
@@ -218,7 +230,7 @@ function App() {
     // reset to the first page and unsorted results on submit
     setPage(1);
     setSort(null);
-    dispatchQuery(query, null, 1, pageSize, !useCache);
+    dispatchQuery(query, null, 1, pageSize, !useCache, offset);
   }
 
   async function dispatchQuery(
@@ -227,6 +239,7 @@ function App() {
     page: number,
     pageSize: number,
     force?: boolean,
+    offset?: number,
   ) {
     // if nothing has changed, do nothing
     if (
@@ -280,18 +293,18 @@ function App() {
         );
         setTables(tables);
       }
-    } catch (err) {
-      const message = (err as Error).message;
+    } catch (_err) {
+      const err = _err as NetworkError;
 
-      setError(message);
+      setError(err.message);
       setRes(null);
 
-      // FIXME: provided structured query error instead of using regex parsing
-      // FIXME: errorPos should be relative to active query at time of dispatch
-      const regex = /\(at position (\d+)\)/.exec(message);
-      if (regex) {
-        const errorPos = Number(regex[1]);
-        editorRef.current!.addError(message, errorPos);
+      if (err.details?.position !== null) {
+        editorRef.current!.addError(
+          err.message,
+          err.details!.position as number,
+          offset,
+        );
       }
     } finally {
       setLoading(false);

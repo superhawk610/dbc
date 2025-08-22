@@ -191,14 +191,66 @@ struct QueryParams {
     pub page_size: usize,
 }
 
+#[derive(Debug)]
+enum PaginatedQueryError {
+    Eyre(eyre::Report),
+    DbError(crate::db::PgError),
+}
+
+impl std::error::Error for PaginatedQueryError {}
+
+impl std::fmt::Display for PaginatedQueryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PaginatedQueryError::Eyre(err) => write!(f, "{}", err),
+            PaginatedQueryError::DbError(err) => write!(f, "{}", err),
+        }
+    }
+}
+
+impl poem::error::ResponseError for PaginatedQueryError {
+    fn status(&self) -> poem::http::StatusCode {
+        poem::http::StatusCode::INTERNAL_SERVER_ERROR
+    }
+
+    fn as_response(&self) -> poem::Response
+    where
+        Self: std::error::Error + Send + Sync + 'static,
+    {
+        let res = poem::Response::builder().status(self.status());
+
+        match self {
+            PaginatedQueryError::Eyre(err) => {
+                return res.body(format!("{err}"));
+            }
+
+            PaginatedQueryError::DbError(err) => {
+                return res.content_type("application/json").body(
+                    serde_json::json!({
+                        "type": "PgError",
+                        "code": err.code(),
+                        "position": err.position(),
+                        "message": err.message(),
+                        "severity": err.severity(),
+                    })
+                    .to_string(),
+                );
+            }
+        }
+    }
+}
+
 #[poem::handler]
 pub async fn handle_query(
     TypedHeader(connection): TypedHeader<headers::XConnName>,
     TypedHeader(database): TypedHeader<headers::XDatabase>,
     Data(state): Data<&Arc<crate::State>>,
     Json(params): Json<QueryParams>,
-) -> eyre::Result<Json<crate::db::PaginatedQueryResult>> {
-    let conn = state.get_conn(connection.into(), database.into()).await?;
+) -> Result<Json<crate::db::PaginatedQueryResult>, PaginatedQueryError> {
+    let conn = state
+        .get_conn(connection.into(), database.into())
+        .await
+        .map_err(|err| PaginatedQueryError::Eyre(err))?;
     Ok(Json(
         crate::db::paginated_query(
             &conn,
@@ -208,6 +260,10 @@ pub async fn handle_query(
             params.page_size,
             params.sort,
         )
-        .await?,
+        .await
+        .map_err(|err| match err.downcast::<crate::db::PgError>() {
+            Ok(err) => PaginatedQueryError::DbError(err),
+            Err(err) => PaginatedQueryError::Eyre(err),
+        })?,
     ))
 }
