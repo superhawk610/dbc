@@ -12,12 +12,18 @@ const cacheKey = (path: string, data?: object, opts?: RequestOpts) =>
     JSON.stringify(opts?.headers ?? {})
   }`;
 
+// This can either be `sessionStorage` or `localStorage`. Originally I used
+// `localStorage`, but I think it makes more sense to only keep these caches
+// around for the duration of the current session. In bundle mode, this also
+// avoids a network request to the server every time we make a query.
+const networkCache = globalThis.sessionStorage;
+
 export function clearNetworkCache() {
   // use a for loop instead of `Object.entries` to play nice with the shim
-  for (let i = 0; i < globalThis.localStorage.length; i++) {
-    const key = globalThis.localStorage.key(i);
+  for (let i = 0; i < networkCache.length; i++) {
+    const key = networkCache.key(i);
     if (key!.startsWith(CACHE_PREFIX)) {
-      globalThis.localStorage.removeItem(key!);
+      networkCache.removeItem(key!);
     }
   }
 }
@@ -42,7 +48,7 @@ const req = (method: string) => {
 
     // try to use a cached response, if available
     if (shouldCache) {
-      const cached = globalThis.localStorage.getItem(key);
+      const cached = networkCache.getItem(key);
       if (cached) {
         try {
           const { data, expiresAt } = JSON.parse(cached);
@@ -51,7 +57,7 @@ const req = (method: string) => {
             return data;
           } else {
             console.debug("Removing expired cache for", path);
-            globalThis.localStorage.removeItem(key);
+            networkCache.removeItem(key);
           }
         } catch {
           console.error("Failed to parse cached response for", path);

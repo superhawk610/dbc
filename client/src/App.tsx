@@ -30,6 +30,7 @@ import Table from "./models/table.ts";
 import SettingsModal from "./components/SettingsModal.tsx";
 import useConnectionVersion from "./hooks/useConnectionVersion.ts";
 import Field from "./components/form/Field.tsx";
+import SearchableList from "./components/SearchableList.tsx";
 
 const EDITOR_HEIGHT = { min: 100, default: 400 };
 
@@ -350,61 +351,38 @@ function App() {
           onClickLabel="Query ⌘⏎"
           sidebar={
             <div className="w-[300px] flex flex-col">
-              <h1 className="mb-1 px-4 divider divider-start text-xs text-base-content/80 uppercase">
-                tables
-              </h1>
+              <SearchableList
+                loading={loading}
+                items={tables?.map((t) => t.table_name) ?? []}
+                onClick={async (table_name) => {
+                  const res = await get<{ ddl: string }>(
+                    `/db/ddl/schemas/${schema}/tables/${table_name}`,
+                    undefined,
+                    {
+                      headers: {
+                        "x-conn-name": connection!.name,
+                        "x-database": database!,
+                      },
+                    },
+                  );
 
-              <div className="flex-grow basis-0 overflow-y-auto overflow-x-hidden">
-                <ul className="w-full menu text-xs">
-                  {!tables
-                    ? (
-                      <li className="p-4">
-                        <span className="loading loading-infinity loading-xl" />
-                      </li>
-                    )
-                    : tables.map((row) => (
-                      <li key={row["table_name"] as string} className="w-full">
-                        <button
-                          type="button"
-                          title={row["table_name"] as string}
-                          className="block w-full overflow-hidden truncate"
-                          onClick={async () => {
-                            const res = await get<{ ddl: string }>(
-                              `/db/ddl/schemas/${schema}/tables/${
-                                row["table_name"]
-                              }`,
-                              undefined,
-                              {
-                                headers: {
-                                  "x-conn-name": connection!.name,
-                                  "x-database": database!,
-                                },
-                              },
-                            );
+                  // insert text into editor
+                  // editorRef.current!.insert(row[2]);
+                  // editorRef.current!.focus();
 
-                            // insert text into editor
-                            // editorRef.current!.insert(row[2]);
-                            // editorRef.current!.focus();
-
-                            // open new editor tab
-                            editorRef.current!.openTab({
-                              id: `dbc://table/${row["table_name"]}`,
-                              name: `Table / ${row["table_name"]}`,
-                              language: "sql",
-                              contents: res.ddl,
-                              icon: "database",
-                            });
-                          }}
-                        >
-                          {row["table_name"]}
-                        </button>
-                      </li>
-                    ))}
-                </ul>
-              </div>
+                  // open new editor tab
+                  editorRef.current!.openTab({
+                    id: `dbc://table/${table_name}`,
+                    name: `Table / ${table_name}`,
+                    language: "sql",
+                    contents: res.ddl,
+                    icon: "database",
+                  });
+                }}
+              />
 
               {version && (
-                <div className="px-4 py-2 bg-neutral/20">
+                <div className="px-4 py-2 bg-neutral/10">
                   <div className="badge badge-xs badge-primary flex items-center select-none">
                     Connected: {version}
                   </div>
@@ -444,12 +422,15 @@ function App() {
                   onSelect={setSchema}
                 />
               )}
-              <div className="-ml-2">
+              <div
+                className="-ml-2"
+                title="Cache query responses to reduce response delay."
+              >
                 <Field
                   size="xs"
                   name="useCache"
                   type="checkbox"
-                  label="Use Cache?"
+                  label="use cache"
                   defaultChecked={useCache}
                   onChange={(ev) => setUseCache(ev.target.checked)}
                 />

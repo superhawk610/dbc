@@ -216,7 +216,7 @@ impl WebView {
 
         let window = WindowBuilder::new()
             .with_title("dbc")
-            .with_inner_size(LogicalSize::new(1100, 700))
+            .with_inner_size(LogicalSize::new(1400, 900))
             .build(&event_loop)
             .unwrap();
 

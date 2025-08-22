@@ -20,7 +20,7 @@ export default function Pagination(
   { query, page, pageSize, loading, setPage, setPageSize }: Props,
 ) {
   const firstRow = (query.page - 1) * query.page_size + 1;
-  const lastRow = firstRow + query.page_size - 1;
+  const lastRow = Math.min(firstRow + query.page_size - 1, query.total_count);
   return (
     <div className="flex items-center space-x-2 px-4 py-2 text-sm bg-neutral/20 text-base-content/80">
       <div className="mr-auto">
