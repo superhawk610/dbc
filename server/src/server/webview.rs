@@ -8,6 +8,7 @@ use tao::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder},
+    platform::macos::WindowBuilderExtMacOS,
     window::WindowBuilder,
 };
 use tokio::process::Command;
@@ -29,6 +30,7 @@ impl WebView {
             "{}".to_owned()
         };
 
+        // FIXME: do this as a part of the build
         // build frontend bundle
         let asset_dir = crate::config_dir().join("build");
         if asset_dir.exists() {
@@ -53,6 +55,7 @@ impl WebView {
             .args(&["task", "build", "--outDir", asset_dir.to_str().unwrap()])
             .env("VITE_API_BASE", format!("localhost:{}", server_port))
             .env("VITE_LOCAL_STORAGE", local_storage)
+            .env("VITE_BUNDLED", "1")
             .env(
                 "VITE_SHOW_LOGS",
                 if cfg!(debug_assertions) { "1" } else { "" },
@@ -84,6 +87,7 @@ impl WebView {
 
         tokio::spawn(async move {
             let router = Route::new()
+                // FIXME: replace this with IPC
                 .at("/_wry/localStorage", put(update_local_storage))
                 .nest(
                     "/",
@@ -119,12 +123,6 @@ impl WebView {
                                     .build(),
                             ),
                         ),
-                        // &PredefinedMenuItem::separator(),
-                        // &PredefinedMenuItem::services(None),
-                        // &PredefinedMenuItem::separator(),
-                        // &PredefinedMenuItem::hide(None),
-                        // &PredefinedMenuItem::hide_others(None),
-                        // &PredefinedMenuItem::show_all(None),
                         &PredefinedMenuItem::separator(),
                         &MenuItem::with_id(
                             "settings",
@@ -205,6 +203,7 @@ impl WebView {
         #[derive(Debug)]
         enum UserEvent {
             MenuEvent(muda::MenuEvent),
+            IPCEvent(String),
         }
 
         let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
@@ -217,12 +216,22 @@ impl WebView {
         let window = WindowBuilder::new()
             .with_title("dbc")
             .with_inner_size(LogicalSize::new(1400, 900))
+            .with_title_hidden(true)
+            .with_titlebar_transparent(true)
+            .with_fullsize_content_view(true)
             .build(&event_loop)
             .unwrap();
 
         let webview = WebViewBuilder::new()
             .with_url(format!("http://localhost:{asset_port}"))
             .with_devtools(true)
+            .with_ipc_handler({
+                let proxy = event_loop.create_proxy();
+                move |req: wry::http::Request<String>| {
+                    let msg = req.into_body();
+                    proxy.send_event(UserEvent::IPCEvent(msg)).unwrap();
+                }
+            })
             .build(&window)
             .unwrap();
 
@@ -244,8 +253,18 @@ impl WebView {
                         }
                     }
                     "toggle-devtools" => webview.open_devtools(),
-                    _ => {
-                        dbg!(&ev);
+                    id => {
+                        eprintln!("unhandled menu event: {}", id);
+                    }
+                },
+
+                Event::UserEvent(UserEvent::IPCEvent(msg)) => match msg.as_str() {
+                    "drag-start" => {
+                        window.drag_window().unwrap();
+                    }
+
+                    msg => {
+                        eprintln!("unhandled ipc event: {}", msg);
                     }
                 },
 

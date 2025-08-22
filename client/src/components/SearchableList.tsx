@@ -39,32 +39,35 @@ export default function SearchableList({ items, loading, onClick }: Props) {
       </div>
 
       <div className="flex-grow basis-0 overflow-y-auto overflow-x-hidden pt-1">
-        <ul className="pt-0 w-full menu text-xs">
-          {loading
-            ? (
-              <li className="p-4">
-                <span className="loading loading-infinity loading-xl" />
-              </li>
-            )
-            : items.length === 0
-            ? (
-              <li className="p-4 opacity-50">
-                No results
-              </li>
-            )
-            : filteredItems.map((item) => (
-              <li key={item} className="w-full">
-                <button
-                  type="button"
-                  title={item}
-                  onClick={() => onClick(item)}
-                  className="block w-full overflow-hidden truncate"
-                >
-                  {item}
-                </button>
-              </li>
-            ))}
-        </ul>
+        {loading
+          ? (
+            <div className="flex flex-col items-center justify-center h-full">
+              <span className="loading loading-infinity loading-xl" />
+              <p className="text-xs text-neutral-content/60">Loading</p>
+            </div>
+          )
+          : (
+            <ul className="pt-0 w-full menu text-xs">
+              {items.length === 0
+                ? (
+                  <li className="p-4 opacity-50">
+                    No results
+                  </li>
+                )
+                : filteredItems.map((item) => (
+                  <li key={item} className="w-full">
+                    <button
+                      type="button"
+                      title={item}
+                      onClick={() => onClick(item)}
+                      className="block w-full overflow-hidden truncate"
+                    >
+                      {item}
+                    </button>
+                  </li>
+                ))}
+            </ul>
+          )}
       </div>
     </>
   );

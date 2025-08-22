@@ -22,14 +22,14 @@ export default function Pagination(
   const firstRow = (query.page - 1) * query.page_size + 1;
   const lastRow = Math.min(firstRow + query.page_size - 1, query.total_count);
   return (
-    <div className="flex items-center space-x-2 px-4 py-2 text-sm bg-neutral/20 text-base-content/80">
+    <div data-wry-drag-region className="flex items-center gap-2">
       <div className="mr-auto">
         Showing {firstRow} - {lastRow} of {query.total_count} rows
 
         {loading && (
           <span className="ml-4 text-sm opacity-50">
             Loading results
-            <span className="ml-2 loading loading-infinity"></span>
+            <span className="ml-2 loading loading-sm loading-infinity"></span>
           </span>
         )}
       </div>

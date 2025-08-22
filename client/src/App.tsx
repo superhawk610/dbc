@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   HiDocumentAdd as NewTabIcon,
+  HiOutlineDatabase as DatabaseIcon,
   HiViewList as ListIcon,
 } from "react-icons/hi";
 import {
@@ -35,13 +36,21 @@ import SearchableList from "./components/SearchableList.tsx";
 
 const EDITOR_HEIGHT = { min: 100, default: 400 };
 
+const ABORT_USER_CANCEL = "USER_CANCEL";
+
 interface LastQuery {
   connection: string | null | undefined;
   query: string;
   sort: Sort | null;
   page: number;
   pageSize: number;
+  abort: AbortController;
 }
+
+// tell React to re-render the results panel whenever any of these changes,
+// so we don't accidentally persist a row from a previous query with the same index
+const resultsKey = (query: LastQuery) =>
+  `${query.query}-${query.page}-${query.pageSize}-${query.sort}`;
 
 function App() {
   const editorRef = useRef<EditorRef>(null);
@@ -54,6 +63,9 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [useCache, setUseCache] = useState(true);
+
+  const [tablesLoading, setTablesLoading] = useState(false);
+  const [uiLoading, setUiLoading] = useState(false);
 
   const [connections, setConnections] = useState<Connection[] | null>(null);
   const [connection, setConnection] = useState<Connection | null>(null);
@@ -95,7 +107,7 @@ function App() {
     (async () => {
       try {
         setError(null);
-        setLoading(true);
+        setUiLoading(true);
 
         const config = await get<Config>("/config");
         setConnections(config.connections);
@@ -107,7 +119,7 @@ function App() {
       } catch (err) {
         setError((err as Error).message);
       } finally {
-        setLoading(false);
+        setUiLoading(false);
       }
     })();
   }, []);
@@ -118,7 +130,7 @@ function App() {
     (async () => {
       try {
         setError(null);
-        setLoading(true);
+        setUiLoading(true);
 
         const databases = await rawDefaultQuery<Database[]>(
           connection.name,
@@ -138,7 +150,7 @@ function App() {
       } catch (err) {
         setError((err as Error).message);
       } finally {
-        setLoading(false);
+        setUiLoading(false);
       }
     })();
   }, [connection]);
@@ -149,7 +161,7 @@ function App() {
     (async () => {
       try {
         setError(null);
-        setLoading(true);
+        setUiLoading(true);
 
         const schemas = await rawQuery<Schema[]>(
           connection.name,
@@ -170,7 +182,7 @@ function App() {
       } catch (err) {
         setError((err as Error).message);
       } finally {
-        setLoading(false);
+        setUiLoading(false);
       }
     })();
   }, [connection, database]);
@@ -181,7 +193,7 @@ function App() {
     (async () => {
       try {
         setError(null);
-        setLoading(true);
+        setTablesLoading(true);
 
         const tables = await rawQuery<Table[]>(
           connection.name,
@@ -192,7 +204,7 @@ function App() {
       } catch (err) {
         setError((err as Error).message);
       } finally {
-        setLoading(false);
+        setTablesLoading(false);
       }
     })();
   }, [connection, database, schema]);
@@ -252,6 +264,11 @@ function App() {
       return;
     }
 
+    // if the query has changed, clear the results
+    if (force || queryRef.current.query !== query) {
+      setRes(null);
+    }
+
     queryRef.current.query = query;
     queryRef.current.sort = sort;
     queryRef.current.page = page;
@@ -262,6 +279,9 @@ function App() {
 
     // clear any previously set errors
     editorRef.current!.clearErrors();
+
+    const abort = new AbortController();
+    queryRef.current.abort = abort;
 
     try {
       setError(null);
@@ -276,6 +296,7 @@ function App() {
           page,
           pageSize,
           useCache,
+          signal: abort.signal,
         },
       );
 
@@ -294,6 +315,9 @@ function App() {
         setTables(tables);
       }
     } catch (_err) {
+      // if the query was cancelled, do nothing
+      if (abort.signal.aborted) return;
+
       const err = _err as NetworkError;
 
       setError(err.message);
@@ -365,7 +389,7 @@ function App() {
           sidebar={
             <div className="w-[300px] flex flex-col">
               <SearchableList
-                loading={loading}
+                loading={tablesLoading}
                 items={tables?.map((t) => t.table_name) ?? []}
                 onClick={async (table_name) => {
                   const res = await get<{ ddl: string }>(
@@ -393,14 +417,6 @@ function App() {
                   });
                 }}
               />
-
-              {version && (
-                <div className="px-4 py-2 bg-neutral/10">
-                  <div className="badge badge-xs badge-primary flex items-center select-none">
-                    Connected: {version}
-                  </div>
-                </div>
-              )}
             </div>
           }
           toolbar={
@@ -413,7 +429,9 @@ function App() {
                     setConnection(connections.find((c) => c.name === name)!);
 
                     // reset database/schema when connection changes
+                    setDatabases(null);
                     setDatabase(null);
+                    setSchemas(null);
                     setSchema(null);
                   }}
                   onManageConnections={() => setSettingsModalsActive(true)}
@@ -467,9 +485,15 @@ function App() {
           />
 
           <QueryResults
+            key={resultsKey(queryRef.current)}
             page={res}
             error={error}
             loading={loading}
+            onCancel={() => {
+              queryRef.current.abort.abort(ABORT_USER_CANCEL);
+              setError("Query cancelled by user");
+              setLoading(false);
+            }}
             onToggleSort={(column_idx, direction) =>
               setSort({ column_idx, direction })}
             onForeignKeyClick={(column, value) => {
@@ -490,8 +514,15 @@ function App() {
               submitQuery(query);
             }}
           />
+        </div>
+      )}
 
-          {res && res.total_count > 0 && (
+      <div
+        data-wry-drag-region
+        className="h-[42px] flex items-center gap-2 px-4 py-2 text-sm"
+      >
+        {showResults && res && res.total_count > 0 && (
+          <div className="flex-1">
             <Pagination
               query={res}
               page={page}
@@ -503,9 +534,26 @@ function App() {
                 setPage(1);
               }}
             />
+          </div>
+        )}
+
+        <div className="flex gap-2 pl-2 items-center ml-auto">
+          {version && (
+            <div className="badge badge-xs badge-outline badge-success flex items-center select-none">
+              <div className="h-1.5 w-1.5 rounded-full bg-success" />
+              {version}
+            </div>
           )}
+
+          {uiLoading && (
+            <div className="opacity-50 loading loading-infinity loading-sm" />
+          )}
+
+          <div className={version ? "text-success" : "opacity-50"}>
+            <DatabaseIcon />
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

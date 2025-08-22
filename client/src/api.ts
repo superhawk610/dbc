@@ -118,7 +118,7 @@ const req = (method: string) => {
 
     // cache the response, if caching is enabled
     if (cacheTimeoutSec > 0) {
-      globalThis.localStorage.setItem(
+      networkCache.setItem(
         key,
         JSON.stringify({
           data: res,
@@ -149,6 +149,7 @@ export interface PaginatedQueryRequest {
   page: number;
   pageSize: number;
   useCache: boolean;
+  signal?: AbortSignal;
 }
 
 export const paginatedQuery = (
@@ -162,6 +163,7 @@ export const paginatedQuery = (
     page: req.page,
     page_size: req.pageSize,
   }, {
+    signal: req.signal,
     cacheTimeoutSec: req.useCache ? CACHE_TIMEOUT_SEC : -1,
     headers: { "x-conn-name": connection, "x-database": database },
   });

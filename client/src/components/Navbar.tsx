@@ -11,9 +11,12 @@ export interface Props {
 
 export default function Navbar({ onSaveSettings, children }: Props) {
   return (
-    <div className="flex items-center px-4 py-2">
-      <div className="flex-1">
-        <a href="/" className="btn btn-ghost text-xl">
+    <div data-wry-drag-region className="flex items-center px-4 py-2">
+      {/* leave room for titlebar traffic light buttons when bundled */}
+      {import.meta.env.VITE_BUNDLED && <div style={{ width: "54px" }} />}
+
+      <div data-wry-drag-region className="flex-1">
+        <a href="/" className="btn btn-ghost text-lg">
           <DatabaseIcon /> dbc
           <span className="pl-2 pt-1 text-xs text-base-content-300/60">
             database client

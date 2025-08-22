@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import {
   HiArrowDown as SortDescIcon,
   HiArrowRight as ForeignKeyIcon,
@@ -10,17 +11,64 @@ import {
   QueryValue,
 } from "../models/query.ts";
 
+interface TimerInterval {
+  since: number;
+  interval: number;
+}
+
 export interface Props {
   page: PaginatedQueryResult | null;
   error: string | null;
   loading?: boolean;
+  onCancel: () => void;
   onToggleSort: (column_idx: number, direction: "ASC" | "DESC") => void;
   onForeignKeyClick: (column: QueryColumn, value: QueryValue) => void;
 }
 
 export default function QueryResults(
-  { page, error, loading, onToggleSort, onForeignKeyClick }: Props,
+  { page, error, loading, onCancel, onToggleSort, onForeignKeyClick }: Props,
 ) {
+  const timerRef = useRef<HTMLDivElement | null>(null);
+  const timerIntervalRef = useRef<TimerInterval | null>(null);
+  const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    function cleanUp() {
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current.interval);
+      }
+      if (timerRef.current) {
+        timerRef.current.textContent = "";
+      }
+      cancelButtonRef.current?.classList.add("hidden");
+    }
+
+    if (loading) {
+      timerIntervalRef.current = {
+        since: Date.now(),
+        interval: setInterval(() => {
+          const elapsedMs = Date.now() - timerIntervalRef.current!.since;
+
+          // don't show timer until it's been running for at least 3s
+          if (elapsedMs < 3_000) return;
+
+          cancelButtonRef.current?.classList.remove("hidden");
+
+          // show timer in seconds with 1 decimal place, until it hits 10s,
+          // then show it in whole seconds
+          const s = Math.floor(elapsedMs / 100) / 10;
+          timerRef.current!.textContent = s > 10
+            ? `${Math.floor(s)}s`
+            : `${s.toFixed(1)}s`;
+        }, 100),
+      };
+    } else {
+      cleanUp();
+    }
+
+    return cleanUp;
+  }, [loading]);
+
   if (error) {
     return (
       <p className="mt-4 px-6 font-mono text-error text-sm">
@@ -31,9 +79,29 @@ export default function QueryResults(
 
   if (!page) {
     return (
-      <p className={`mt-4 px-6 text-sm ${loading ? "opacity-30" : ""}`}>
-        No results.
-      </p>
+      <div
+        className={`h-full flex flex-col items-center justify-center mt-4 px-6 text-sm ${
+          loading ? "opacity-60" : ""
+        }`}
+      >
+        <div>
+          {loading ? "Loading results" : "No results."}
+          {loading && (
+            <span className="ml-2 loading loading-infinity loading-sm" />
+          )}
+        </div>
+
+        <div className="mt-1 opacity-70" ref={timerRef} />
+
+        <button
+          type="button"
+          className="mt-2 btn btn-circle btn-ghost btn-xs hidden"
+          ref={cancelButtonRef}
+          onClick={onCancel}
+        >
+          Cancel
+        </button>
+      </div>
     );
   }
 
