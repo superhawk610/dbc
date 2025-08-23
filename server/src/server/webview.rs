@@ -1,9 +1,4 @@
-use poem::{
-    EndpointExt, Route, Server,
-    endpoint::StaticFilesEndpoint,
-    put,
-    web::{Data, Json},
-};
+use poem::{EndpointExt, Route, Server, endpoint::StaticFilesEndpoint};
 use tao::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
@@ -11,10 +6,14 @@ use tao::{
     platform::macos::WindowBuilderExtMacOS,
     window::WindowBuilder,
 };
-use tokio::process::Command;
 use wry::WebViewBuilder;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+// these will be included in the build and replaced at runtime
+pub const VITE_API_BASE: &str = "{{VITE_API_BASE}}";
+pub const VITE_LOCAL_STORAGE: &str = "{{VITE_LOCAL_STORAGE}}";
+pub const VITE_SHOW_LOGS: &str = "{{VITE_SHOW_LOGS}}";
 
 pub struct WebView;
 
@@ -30,175 +29,50 @@ impl WebView {
             "{}".to_owned()
         };
 
-        // FIXME: do this as a part of the build
-        // build frontend bundle
         let asset_dir = crate::config_dir().join("build");
-        if asset_dir.exists() {
-            let _ = tokio::fs::remove_dir_all(&asset_dir).await;
-        }
 
-        // if we're running from within the MacOS bundle, look in the Resources dir
-        // otherwise, we're running via `cargo run` and we're within the repository
-        let working_dir = if let Ok(bin_path) = std::env::current_exe()
-            && let Some(bin_dir) = bin_path.parent()
-            && let Some(dir_name) = bin_dir.file_name()
-            && let Some(dir_name) = dir_name.to_str()
-            && dir_name == "MacOS"
-        {
-            bin_dir.join("../Resources/_up_/client")
-        } else {
-            std::path::PathBuf::from("../client")
-        };
+        // copy `index.template.js` template and replace with runtime variables
+        let js_dir = asset_dir.join("assets");
+        let js_index_template = js_dir.join("index.template.js");
+        let js_index = index_js_file(&js_dir);
 
-        Command::new("deno")
-            .current_dir(working_dir)
-            .args(&["task", "build", "--outDir", asset_dir.to_str().unwrap()])
-            .env("VITE_API_BASE", format!("localhost:{}", server_port))
-            .env("VITE_LOCAL_STORAGE", local_storage)
-            .env("VITE_BUNDLED", "1")
-            .env(
-                "VITE_SHOW_LOGS",
-                if cfg!(debug_assertions) { "1" } else { "" },
+        let index = std::fs::read_to_string(&js_index_template).unwrap();
+        let index = index
+            .replace(VITE_API_BASE, &format!("localhost:{}", server_port))
+            .replace(
+                VITE_LOCAL_STORAGE,
+                // re-escape JSON string since it will be inside a `JSON.parse("..")`
+                &format!("{}", local_storage.escape_default()),
             )
-            .env("NODE_ENV", "production")
-            .spawn()
-            .unwrap()
-            .wait()
-            .await
-            .unwrap();
+            .replace(
+                VITE_SHOW_LOGS,
+                if cfg!(debug_assertions) { "1" } else { "" },
+            );
+
+        std::fs::write(&js_index, index).unwrap();
 
         // serve frontend bundle
         let (acceptor, asset_port) = crate::server::bind_acceptor("127.0.0.1:0").await;
 
-        #[poem::handler]
-        async fn update_local_storage(
-            Json(state): Json<serde_json::Value>,
-            Data(local_storage_file): Data<&std::path::PathBuf>,
-        ) -> poem::http::StatusCode {
-            tokio::fs::write(
-                &local_storage_file,
-                serde_json::to_string_pretty(&state).unwrap(),
-            )
-            .await
-            .unwrap();
+        {
+            let local_storage_file = local_storage_file.clone();
+            tokio::spawn(async move {
+                let router = Route::new()
+                    .nest(
+                        "/",
+                        StaticFilesEndpoint::new(&asset_dir).index_file("index.html"),
+                    )
+                    .data(local_storage_file);
 
-            poem::http::StatusCode::NO_CONTENT
+                Server::new_with_acceptor(acceptor)
+                    .run(router)
+                    .await
+                    .unwrap();
+            });
         }
 
-        tokio::spawn(async move {
-            let router = Route::new()
-                // FIXME: replace this with IPC
-                .at("/_wry/localStorage", put(update_local_storage))
-                .nest(
-                    "/",
-                    StaticFilesEndpoint::new(&asset_dir).index_file("index.html"),
-                )
-                .data(local_storage_file);
-
-            Server::new_with_acceptor(acceptor)
-                .run(router)
-                .await
-                .unwrap();
-        });
-
-        let _menu = if cfg!(target_os = "macos") {
-            use muda::{
-                AboutMetadataBuilder, Menu, MenuItem, PredefinedMenuItem, Submenu,
-                accelerator::{Accelerator, Code, Modifiers},
-            };
-
-            let menu = Menu::with_items(&[
-                &Submenu::with_items(
-                    "App",
-                    true,
-                    &[
-                        &PredefinedMenuItem::about(
-                            Some("About dbc"),
-                            Some(
-                                AboutMetadataBuilder::new()
-                                    .name(Some("dbc"))
-                                    .version(Some(VERSION))
-                                    .comments(Some("A database client."))
-                                    .copyright(Some("© 2025 Aaron Ross. All rights reserved."))
-                                    .build(),
-                            ),
-                        ),
-                        &PredefinedMenuItem::separator(),
-                        &MenuItem::with_id(
-                            "settings",
-                            "Settings",
-                            true,
-                            Some(Accelerator::new(Some(Modifiers::SUPER), Code::Comma)),
-                        ),
-                        &PredefinedMenuItem::separator(),
-                        &PredefinedMenuItem::quit(None),
-                    ],
-                )
-                .unwrap(),
-                &Submenu::with_items(
-                    "File",
-                    true,
-                    &[
-                        &MenuItem::with_id(
-                            "new-tab",
-                            "New Tab",
-                            true,
-                            Some(Accelerator::new(Some(Modifiers::SUPER), Code::KeyT)),
-                        ),
-                        &PredefinedMenuItem::separator(),
-                        &PredefinedMenuItem::close_window(None),
-                    ],
-                )
-                .unwrap(),
-                &Submenu::with_items(
-                    "Edit",
-                    true,
-                    &[
-                        &PredefinedMenuItem::undo(None),
-                        &PredefinedMenuItem::redo(None),
-                        &PredefinedMenuItem::separator(),
-                        &PredefinedMenuItem::cut(None),
-                        &PredefinedMenuItem::copy(None),
-                        &PredefinedMenuItem::paste(None),
-                        &PredefinedMenuItem::select_all(None),
-                    ],
-                )
-                .unwrap(),
-                &Submenu::with_items(
-                    "View",
-                    true,
-                    &[&MenuItem::with_id(
-                        "toggle-results",
-                        "Toggle Query Results",
-                        true,
-                        None,
-                    )],
-                )
-                .unwrap(),
-                #[cfg(feature = "devtools")]
-                &Submenu::with_items(
-                    "Developer",
-                    true,
-                    &[&MenuItem::with_id(
-                        "toggle-devtools",
-                        "Toggle DevTools",
-                        true,
-                        Some(Accelerator::new(
-                            Some(Modifiers::SUPER | Modifiers::ALT),
-                            Code::KeyI,
-                        )),
-                    )],
-                )
-                .unwrap(),
-            ])
-            .unwrap();
-
-            menu.init_for_nsapp();
-
-            Some(menu)
-        } else {
-            None
-        };
+        #[cfg(target_os = "macos")]
+        let _menu = build_menu();
 
         #[derive(Debug)]
         enum UserEvent {
@@ -263,6 +137,14 @@ impl WebView {
                         window.drag_window().unwrap();
                     }
 
+                    s if s.starts_with("local-storage:") => {
+                        // round-trip to get pretty formatting before saving
+                        let json = s.strip_prefix("local-storage:").unwrap();
+                        let json = serde_json::from_str::<serde_json::Value>(json).unwrap();
+                        let json = serde_json::to_string_pretty(&json).unwrap();
+                        std::fs::write(&local_storage_file, json).unwrap();
+                    }
+
                     msg => {
                         eprintln!("unhandled ipc event: {}", msg);
                     }
@@ -272,4 +154,116 @@ impl WebView {
             }
         });
     }
+}
+
+/// Given the path to the build's `assets` directory, find the `index-{HASH}.js` file.
+pub fn index_js_file(js_dir: impl AsRef<std::path::Path>) -> std::path::PathBuf {
+    std::fs::read_dir(js_dir.as_ref())
+        .expect("populated during build")
+        .map(|f| f.unwrap())
+        .find(|f| {
+            let name = f.file_name();
+            let name = name.to_str().unwrap();
+            name.starts_with("index-") && name.ends_with(".js")
+        })
+        .map(|f| js_dir.as_ref().join(f.file_name()))
+        .expect("assets/index-{HASH}.js exists")
+}
+
+#[cfg(target_os = "macos")]
+fn build_menu() -> muda::Menu {
+    use muda::{
+        AboutMetadataBuilder, Menu, MenuItem, PredefinedMenuItem, Submenu,
+        accelerator::{Accelerator, Code, Modifiers},
+    };
+
+    let menu = Menu::with_items(&[
+        &Submenu::with_items(
+            "App",
+            true,
+            &[
+                &PredefinedMenuItem::about(
+                    Some("About dbc"),
+                    Some(
+                        AboutMetadataBuilder::new()
+                            .name(Some("dbc"))
+                            .version(Some(VERSION))
+                            .comments(Some("A database client."))
+                            .copyright(Some("© 2025 Aaron Ross. All rights reserved."))
+                            .build(),
+                    ),
+                ),
+                &PredefinedMenuItem::separator(),
+                &MenuItem::with_id(
+                    "settings",
+                    "Settings",
+                    true,
+                    Some(Accelerator::new(Some(Modifiers::SUPER), Code::Comma)),
+                ),
+                &PredefinedMenuItem::separator(),
+                &PredefinedMenuItem::quit(None),
+            ],
+        )
+        .unwrap(),
+        &Submenu::with_items(
+            "File",
+            true,
+            &[
+                &MenuItem::with_id(
+                    "new-tab",
+                    "New Tab",
+                    true,
+                    Some(Accelerator::new(Some(Modifiers::SUPER), Code::KeyT)),
+                ),
+                &PredefinedMenuItem::separator(),
+                &PredefinedMenuItem::close_window(None),
+            ],
+        )
+        .unwrap(),
+        &Submenu::with_items(
+            "Edit",
+            true,
+            &[
+                &PredefinedMenuItem::undo(None),
+                &PredefinedMenuItem::redo(None),
+                &PredefinedMenuItem::separator(),
+                &PredefinedMenuItem::cut(None),
+                &PredefinedMenuItem::copy(None),
+                &PredefinedMenuItem::paste(None),
+                &PredefinedMenuItem::select_all(None),
+            ],
+        )
+        .unwrap(),
+        &Submenu::with_items(
+            "View",
+            true,
+            &[&MenuItem::with_id(
+                "toggle-results",
+                "Toggle Query Results",
+                true,
+                None,
+            )],
+        )
+        .unwrap(),
+        #[cfg(feature = "devtools")]
+        &Submenu::with_items(
+            "Developer",
+            true,
+            &[&MenuItem::with_id(
+                "toggle-devtools",
+                "Toggle DevTools",
+                true,
+                Some(Accelerator::new(
+                    Some(Modifiers::SUPER | Modifiers::ALT),
+                    Code::KeyI,
+                )),
+            )],
+        )
+        .unwrap(),
+    ])
+    .unwrap();
+
+    menu.init_for_nsapp();
+
+    menu
 }

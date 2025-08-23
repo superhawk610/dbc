@@ -49,13 +49,8 @@ class LocalStorageShim {
   }
 }
 
-async function persist(state: Record<string, string>) {
-  await fetch(`/_wry/localStorage`, {
-    mode: "cors",
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(state),
-  });
+function persist(state: Record<string, string>) {
+  globalThis.ipc.postMessage("local-storage:" + JSON.stringify(state));
 }
 
 // When running bundled, persist local storage via backend.

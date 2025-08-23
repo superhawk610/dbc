@@ -48,10 +48,3 @@ serde_with = "3.14.0"
 [package.metadata.bundle]
 identifier = "io.github.superhawk610.dbc"
 icon = ["icons/64x64.png", "icons/128x128.png", "icons/128x128@2x.png"]
-resources = [
-  "../client/deno.json",
-  "../client/deno.lock",
-  "../client/index.html",
-  "../client/vite.config.ts",
-  "../client/src",
-]

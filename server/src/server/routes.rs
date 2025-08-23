@@ -28,7 +28,7 @@ pub async fn format_eyre<E: poem::Endpoint>(
 }
 
 #[poem::handler]
-pub async fn websocket(ws: WebSocket, Path(channel): Path<String>) -> impl IntoResponse {
+pub async fn websocket(ws: WebSocket, Path(_channel): Path<String>) -> impl IntoResponse {
     let (tx, mut rx) = tokio::sync::mpsc::channel(100);
     crate::stream::subscribe(tx).await.unwrap();
 
