@@ -621,6 +621,7 @@ pub async fn paginated_query(
 
     let base_query = parse_query(raw_query);
 
+    // TODO: get number of affected rows?
     // DDL queries can't be counted/paginated like normal queries, but we
     // still support a pagination wrapper around their results; they'll always
     // return a single result representing the DDL command's output

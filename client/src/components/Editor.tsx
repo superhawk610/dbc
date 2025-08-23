@@ -540,7 +540,7 @@ export default forwardRef(
                       </span>
                       <button
                         type="button"
-                        className={`btn btn-xs btn-ghost hover:bg-black/30 hover:border-transparent
+                        className={`btn btn-xs btn-ghost rounded-sm hover:bg-black/30 hover:border-transparent
                           hover:shadow-none cursor-pointer px-1 ml-auto -mr-1.5 ${
                           idx === tabState.activeIndex
                             ? "text-primary-content/60"
