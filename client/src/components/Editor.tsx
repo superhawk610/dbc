@@ -472,7 +472,7 @@ export default forwardRef(
         if (idx < draft.activeIndex) {
           // if we closed a tab to the left, decrement the active index
           draft.activeIndex -= 1;
-        } else if (idx === draft.tabs.length) {
+        } else if (draft.activeIndex === draft.tabs.length) {
           // if we closed the rightmost tab, shift one to the left
           draft.activeIndex -= 1;
         }
@@ -509,7 +509,7 @@ export default forwardRef(
                       role="button"
                       key={idx}
                       className={`
-                      flex items-center px-3 py-1.5 text-xs cursor-pointer
+                      flex items-center px-3 py-1 text-xs cursor-pointer
                       border-r border-base-content/10
                     ${
                         idx === tabState.activeIndex
@@ -532,7 +532,7 @@ export default forwardRef(
                           ? <DatabaseIcon />
                           : <TabIcon />}
                       </div>
-                      <span className="min-w-32 max-w-56 mr-2 overflow-hidden whitespace-nowrap text-ellipsis">
+                      <span className="min-w-32 max-w-56 mr-2 py-1 overflow-hidden whitespace-nowrap text-ellipsis">
                         {prefix && (
                           <span className="opacity-40 pr-1">{prefix}</span>
                         )}
@@ -540,7 +540,8 @@ export default forwardRef(
                       </span>
                       <button
                         type="button"
-                        className={`cursor-pointer px-1 ml-auto -mr-1 ${
+                        className={`btn btn-xs btn-ghost hover:bg-black/30 hover:border-transparent
+                          hover:shadow-none cursor-pointer px-1 ml-auto -mr-1.5 ${
                           idx === tabState.activeIndex
                             ? "text-primary-content/60"
                             : "text-base-content/60"
