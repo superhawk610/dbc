@@ -94,6 +94,7 @@ interface MonacoRef {
   monaco: Monaco;
   definedThemes: Record<string, boolean>;
   decorations: string[];
+  callbacks: Record<string, () => void>;
 }
 
 // TODO: look into using https://github.com/DTStack/monaco-sql-languages
@@ -285,7 +286,7 @@ export default forwardRef(
     const activeTab = tabState.tabs[tabState.activeIndex];
 
     const [showEditor, setShowEditor] = useState(false);
-    const monacoRef = useRef({ definedThemes: {} } as MonacoRef);
+    const monacoRef = useRef({ definedThemes: {}, callbacks: {} } as MonacoRef);
     const [themes, setThemes] = useState<Record<string, string | null>>(
       DEFAULT_THEMES,
     );
@@ -298,6 +299,11 @@ export default forwardRef(
       database,
       schema,
     });
+
+    // keep editor context in sync
+    useEffect(() => {
+      monacoRef.current.callbacks.onClick = onClick!;
+    }, [onClick]);
 
     // keep provider context in sync with editor
     useEffect(() => {
@@ -434,8 +440,7 @@ export default forwardRef(
             monacoRef.current!.monaco.KeyCode.Enter,
           ],
           contextMenuGroupId: "2_commands",
-          // TODO: this callback changes with hot reloads
-          run: () => onClick?.(),
+          run: () => monacoRef.current.callbacks.onClick?.(),
         });
       }
 

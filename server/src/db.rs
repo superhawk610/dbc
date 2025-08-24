@@ -141,30 +141,36 @@ pub async fn connect(config: &Config) -> eyre::Result<Connection> {
 pub struct QueryResult {
     pub columns: Vec<QueryResultColumn>,
     pub rows: Vec<Vec<serde_json::Value>>,
-    /// Whether or not the query contained DDL (Data Definition Language).
-    /// When `false`, the statement only contained DML (Data Manipulation Language).
-    /// When `true`, the client should refresh any cached schemas, as they may have changed.
-    pub is_ddl: bool,
 }
 
 #[derive(Debug, Serialize)]
-pub struct PaginatedQueryResult {
-    /// 1-indexed page number.
-    pub page: usize,
-    /// The number of rows included in a single page.
-    pub page_size: usize,
-    /// The number of rows contained in the current page.
-    pub page_count: usize,
-    /// The total number of rows available across all pages.
-    pub total_count: usize,
-    /// The total number of pages.
-    pub total_pages: usize,
-    /// The sort order used to generate this page. The sort `column_idx` can
-    /// be used to index into the `QueryResult`'s `columns` array to get the
-    /// column name.
-    pub sort: Option<Sort>,
-    /// The current page.
-    pub entries: QueryResult,
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub enum PaginatedQueryResult {
+    Select {
+        /// 1-indexed page number.
+        page: usize,
+        /// The number of rows included in a single page.
+        page_size: usize,
+        /// The number of rows contained in the current page.
+        page_count: usize,
+        /// The total number of rows available across all pages.
+        total_count: usize,
+        /// The total number of pages.
+        total_pages: usize,
+        /// The sort order used to generate this page. The sort `column_idx` can
+        /// be used to index into the `QueryResult`'s `columns` array to get the
+        /// column name.
+        sort: Option<Sort>,
+        /// The current page.
+        entries: QueryResult,
+    },
+
+    ModifyData {
+        /// How many rows were updated/deleted.
+        affected_rows: u64,
+    },
+
+    ModifyStructure,
 }
 
 pub type QueryRows = Vec<HashMap<String, serde_json::Value>>;
@@ -621,19 +627,21 @@ pub async fn paginated_query(
 
     let base_query = parse_query(raw_query);
 
-    // TODO: get number of affected rows?
+    // TODO: get number of affected rows
+    // - change return type for DDL queries
+    // - use `client.execute` to get number of affected rows
+
     // DDL queries can't be counted/paginated like normal queries, but we
     // still support a pagination wrapper around their results; they'll always
     // return a single result representing the DDL command's output
-    if is_ddl(&base_query) {
-        return Ok(PaginatedQueryResult {
-            page: 1,
-            page_size,
-            page_count: 1,
-            total_count: 1,
-            total_pages: 1,
-            sort: None,
-            entries: query(client, &base_query, params).await?,
+    let query_type = query_type(&base_query);
+    if let QueryType::ModifyData | QueryType::ModifyStructure = query_type {
+        let affected_rows = client.execute(&base_query, params).await?;
+
+        return Ok(match query_type {
+            QueryType::ModifyData => PaginatedQueryResult::ModifyData { affected_rows },
+            QueryType::ModifyStructure => PaginatedQueryResult::ModifyStructure,
+            _ => unreachable!(),
         });
     }
 
@@ -685,7 +693,7 @@ pub async fn paginated_query(
     let total_count = count_result.rows[0][0].as_u64().unwrap() as usize;
     let total_pages = total_count.div_ceil(page_size);
 
-    Ok(PaginatedQueryResult {
+    Ok(PaginatedQueryResult::Select {
         page,
         page_size,
         page_count,
@@ -719,7 +727,6 @@ pub async fn query(
     Ok(QueryResult {
         columns,
         rows: raw_query(client, &sql, &stmt, params).await?,
-        is_ddl: is_ddl(&sql),
     })
 }
 
@@ -919,14 +926,32 @@ fn parse_query(query: &str) -> String {
     }
 }
 
-fn is_ddl(query: &str) -> bool {
+#[derive(Debug, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum QueryType {
+    /// DML SELECT statement
+    Select,
+    /// DML INSERT / UPDATE / DELETE statement
+    ModifyData,
+    /// DDL CREATE / ALTER / DROP / TRUNCATE / COMMENT statement
+    ModifyStructure,
+}
+
+fn query_type(query: &str) -> QueryType {
     let query = query.to_ascii_lowercase();
-    // insert/update are DML but close enough
-    [
-        "create", "alter", "drop", "truncate", "comment", "insert", "update",
-    ]
-    .iter()
-    .any(|verb| query.contains(verb))
+    let tokens = query.split(&[' ', '\n']);
+
+    for token in tokens {
+        match token {
+            "insert" | "update" | "delete" => return QueryType::ModifyData,
+            "create" | "alter" | "drop" | "truncate" | "comment" => {
+                return QueryType::ModifyStructure;
+            }
+            _ => {}
+        }
+    }
+
+    QueryType::Select
 }
 
 fn col_supported(col: &tokio_postgres::Column) -> bool {

@@ -17,7 +17,6 @@ export interface QueryColumn {
 export interface QueryResult {
   columns: QueryColumn[];
   rows: QueryValue[][];
-  is_ddl: boolean;
 }
 
 export interface Sort {
@@ -25,7 +24,13 @@ export interface Sort {
   direction: "ASC" | "DESC";
 }
 
-export interface PaginatedQueryResult {
+export type PaginatedQueryResult =
+  | PaginatedSelectQueryResult
+  | PaginatedModifyDataQueryResult
+  | PaginatedModifyStructureQueryResult;
+
+export interface PaginatedSelectQueryResult {
+  type: "select";
   page: number;
   page_size: number;
   page_count: number;
@@ -33,4 +38,13 @@ export interface PaginatedQueryResult {
   total_pages: number;
   sort: Sort | null;
   entries: QueryResult;
+}
+
+export interface PaginatedModifyDataQueryResult {
+  type: "modify-data";
+  affected_rows: number;
+}
+
+export interface PaginatedModifyStructureQueryResult {
+  type: "modify-structure";
 }

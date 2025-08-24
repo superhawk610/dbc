@@ -302,17 +302,30 @@ function App() {
 
       setRes(res);
 
-      // if the statement contained DDL, refresh the table view
-      // and clear the network cache
-      if (res.entries.is_ddl) {
-        clearNetworkCache();
+      // if the statement modified structure, clear the network cache and refresh tables
+      switch (res.type) {
+        case "modify-structure": {
+          clearNetworkCache();
 
-        const tables = await rawQuery<Table[]>(
-          connection!.name,
-          database!,
-          `/db/schemas/${schema}/tables`,
-        );
-        setTables(tables);
+          const tables = await rawQuery<Table[]>(
+            connection!.name,
+            database!,
+            `/db/schemas/${schema}/tables`,
+          );
+          setTables(tables);
+          console.log(tables);
+
+          break;
+        }
+
+        // if it modified data, just clear the network cache
+        case "modify-data": {
+          clearNetworkCache();
+          break;
+        }
+
+        default:
+          // do nothing
       }
     } catch (_err) {
       // if the query was cancelled, do nothing
@@ -521,7 +534,7 @@ function App() {
         data-wry-drag-region
         className="h-[42px] flex items-center gap-2 px-4 py-2 text-sm"
       >
-        {showResults && res && res.total_count > 0 && (
+        {showResults && res && res.type === "select" && res.total_count > 0 && (
           <div className="flex-1">
             <Pagination
               query={res}

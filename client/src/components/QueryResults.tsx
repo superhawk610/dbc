@@ -71,7 +71,7 @@ export default function QueryResults(
 
   if (error) {
     return (
-      <p className="mt-4 px-6 font-mono text-error text-sm">
+      <p className="py-4 px-6 font-mono text-error text-sm">
         {error}
       </p>
     );
@@ -80,7 +80,7 @@ export default function QueryResults(
   if (!page) {
     return (
       <div
-        className={`h-full flex flex-col items-center justify-center mt-4 px-6 text-sm ${
+        className={`h-full flex flex-col items-center justify-center py-4 px-6 text-sm ${
           loading ? "opacity-60" : ""
         }`}
       >
@@ -101,6 +101,18 @@ export default function QueryResults(
         >
           Cancel
         </button>
+      </div>
+    );
+  }
+
+  if (page.type === "modify-data" || page.type === "modify-structure") {
+    return (
+      <div className="py-4 px-6 text-sm">
+        {page.type === "modify-data"
+          ? `Success! Updated ${page.affected_rows} row${
+            page.affected_rows === 1 ? "" : "s"
+          }.`
+          : "Success!"}
       </div>
     );
   }

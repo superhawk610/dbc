@@ -5,13 +5,31 @@
 edition = "2024"
 
 [dependencies]
+clap = { version = "4.5.45", features = ["derive"] }
 dbc = { path = "./server", features = ["bundle"] }
 ---
 
+use clap::Parser;
 use dbc::server::webview;
 use std::process::Command;
 
+/// Build `dbc` into an executable bundle.
+#[derive(Parser, Debug)]
+#[command(about, long_about = None)]
+struct Args {
+    /// Build and run in development mode.
+    #[arg(long, group = "mode")]
+    dev: bool,
+
+    /// Build for release and copy into the system Applications directory.
+    #[arg(long, group = "mode")]
+    install: bool,
+}
+
 fn main() {
+    let args = Args::parse();
+    let should_install = args.install || !args.dev;
+
     // initialize build directory
     let asset_dir = dbc::config_dir().join("build");
     step(&format!(
@@ -45,19 +63,24 @@ fn main() {
 
     std::fs::copy(&js_index, js_dir.join("index.template.js")).unwrap();
 
-    // build with `cargo-bundle`
-    step("Building application bundle");
-    exec_in(
-        "./server",
-        "cargo bundle --release --features bundle,devtools",
-    );
+    if should_install {
+        // build with `cargo-bundle`
+        step("Building application bundle");
+        exec_in(
+            "./server",
+            "cargo bundle --release --features bundle,devtools",
+        );
 
-    // copy to system applications dir
-    done("Built successfully");
-    step("Installing");
-    exec("cp -r ./server/target/release/bundle/osx/dbc.app /Applications");
+        // copy to system applications dir
+        done("Built successfully");
+        step("Installing");
+        exec("cp -r ./server/target/release/bundle/osx/dbc.app /Applications");
 
-    done("Installed to /Applications/dbc.app");
+        done("Installed to /Applications/dbc.app");
+    } else {
+        step("Running application");
+        exec_in("./server", "cargo run --features bundle");
+    }
 }
 
 fn step(desc: &str) {
