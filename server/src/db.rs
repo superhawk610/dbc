@@ -65,14 +65,57 @@ where
     });
 }
 
+pub struct Client {
+    inner: tokio_postgres::Client,
+
+    /// The materialized view query. Postgres doesn't have an `information_schema.materialized_views`
+    /// table, so we need to fetch it manually. This can be done by slightly modifying the query that
+    /// backs `information_schema.views`. This should only be done once during the first connection.
+    mat_view_query: String,
+}
+
+impl std::ops::Deref for Client {
+    type Target = tokio_postgres::Client;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl Client {
+    pub async fn new(inner: tokio_postgres::Client) -> eyre::Result<Self> {
+        let mat_view_query = inner
+            .query_one(
+                "select view_definition
+                from information_schema.views
+                where table_schema = 'information_schema'
+                and table_name = 'views'",
+                &[],
+            )
+            .await
+            .map_err(PgError::from)
+            .map(|row| row.get::<_, String>(0))
+            .unwrap()
+            // by default, this view selects views; we want materialized views instead
+            .replace("c.relkind = 'v'", "c.relkind = 'm'")
+            .trim_end_matches(';')
+            .to_owned();
+
+        Ok(Self {
+            inner,
+            mat_view_query,
+        })
+    }
+}
+
 pub struct Connection {
-    pub client: tokio_postgres::Client,
-    pub tx: Option<Sender<()>>,
-    pub rx: Option<Receiver<()>>,
+    client: Client,
+    tx: Option<Sender<()>>,
+    rx: Option<Receiver<()>>,
 }
 
 impl std::ops::Deref for Connection {
-    type Target = tokio_postgres::Client;
+    type Target = Client;
 
     fn deref(&self) -> &Self::Target {
         &self.client
@@ -112,29 +155,27 @@ pub async fn connect(config: &Config) -> eyre::Result<Connection> {
     let (live_tx, live_rx) = channel();
     let (kill_tx, kill_rx) = channel();
 
-    if config.ssl {
+    let client = if config.ssl {
         let tls = MakeTlsConnector::new(TlsConnector::new()?);
         let (client, conn) = tokio_postgres::connect(&config.conn_str(), tls).await?;
 
         spawn_conn(conn, live_tx, kill_rx);
 
-        Ok(Connection {
-            client,
-            rx: Some(live_rx),
-            tx: Some(kill_tx),
-        })
+        client
     } else {
         let (client, conn) =
             tokio_postgres::connect(&config.conn_str(), tokio_postgres::NoTls).await?;
 
         spawn_conn(conn, live_tx, kill_rx);
 
-        Ok(Connection {
-            client,
-            rx: Some(live_rx),
-            tx: Some(kill_tx),
-        })
-    }
+        client
+    };
+
+    Ok(Connection {
+        client: Client::new(client).await?,
+        rx: Some(live_rx),
+        tx: Some(kill_tx),
+    })
 }
 
 #[derive(Debug, Serialize)]
@@ -216,10 +257,7 @@ pub struct QueryResultColumnExtended {
 impl QueryResultColumn {
     /// Fetch additional information about the given set of columns, including the source table
     /// and column names and FKs. This will be accomplished in a single batch of queries.
-    pub async fn fetch_extended(
-        columns: &mut Vec<Self>,
-        client: &tokio_postgres::Client,
-    ) -> eyre::Result<()> {
+    pub async fn fetch_extended(columns: &mut Vec<Self>, client: &Client) -> eyre::Result<()> {
         // this may overfetch a bit when the same column IDs exist across multiple tables,
         // but this is still better than not filtering by column ID at all
         let sql = "
@@ -384,7 +422,7 @@ impl QueryResultColumn {
     }
 }
 
-pub async fn version_info(client: &tokio_postgres::Client) -> eyre::Result<String> {
+pub async fn version_info(client: &Client) -> eyre::Result<String> {
     let sql = "select version();";
     Ok(query(client, sql, &[]).await?.rows[0][0]
         .as_str()
@@ -392,27 +430,44 @@ pub async fn version_info(client: &tokio_postgres::Client) -> eyre::Result<Strin
         .to_owned())
 }
 
-// TODO: probably need to optimize this per-database to filter out things
-// like system tables, partitions, etc.
-// see: https://stackoverflow.com/a/58243669/885098
-pub async fn list_tables(
-    client: &tokio_postgres::Client,
-    schema: &str,
-) -> eyre::Result<QueryResult> {
-    let sql = "
-    SELECT *
+pub async fn list_tables(client: &Client, schema: &str) -> eyre::Result<QueryRows> {
+    let table_sql = "
+    SELECT 'table' as type, *
     FROM information_schema.tables
     WHERE table_schema = $1
     AND table_type = 'BASE TABLE'
     ORDER BY table_name";
-    query(client, sql, &[&schema]).await
+
+    let view_sql = "
+    SELECT 'view' as type, *
+    FROM information_schema.views
+    WHERE table_schema = $1
+    ORDER BY table_name";
+
+    let mat_view_sql = format!(
+        "SELECT 'materialized_view' as type, *
+        FROM (\n{}\n) _
+        WHERE table_schema = $1
+        ORDER BY table_name",
+        client.mat_view_query
+    );
+
+    let (tables, views, mat_views) = futures_util::future::try_join3(
+        query(client, table_sql, &[&schema]),
+        query(client, view_sql, &[&schema]),
+        query(client, &mat_view_sql, &[&schema]),
+    )
+    .await?;
+
+    Ok(tables
+        .row_maps()
+        .into_iter()
+        .chain(views.row_maps().into_iter())
+        .chain(mat_views.row_maps().into_iter())
+        .collect())
 }
 
-pub async fn list_columns(
-    client: &tokio_postgres::Client,
-    schema: &str,
-    table: &str,
-) -> eyre::Result<QueryResult> {
+pub async fn list_columns(client: &Client, schema: &str, table: &str) -> eyre::Result<QueryResult> {
     let sql = "
     SELECT column_name
     FROM information_schema.columns
@@ -422,7 +477,7 @@ pub async fn list_columns(
     query(client, sql, &[&schema, &table]).await
 }
 
-pub async fn list_schemas(client: &tokio_postgres::Client) -> eyre::Result<QueryResult> {
+pub async fn list_schemas(client: &Client) -> eyre::Result<QueryResult> {
     let sql = "
     SELECT *
     FROM information_schema.schemata
@@ -431,7 +486,7 @@ pub async fn list_schemas(client: &tokio_postgres::Client) -> eyre::Result<Query
     query(client, sql, &[]).await
 }
 
-pub async fn list_databases(client: &tokio_postgres::Client) -> eyre::Result<QueryResult> {
+pub async fn list_databases(client: &Client) -> eyre::Result<QueryResult> {
     let sql = "
     SELECT *
     FROM pg_database
@@ -440,11 +495,7 @@ pub async fn list_databases(client: &tokio_postgres::Client) -> eyre::Result<Que
     query(client, sql, &[]).await
 }
 
-pub async fn table_ddl(
-    client: &tokio_postgres::Client,
-    schema: &str,
-    table: &str,
-) -> eyre::Result<String> {
+pub async fn table_ddl(client: &Client, schema: &str, table: &str) -> eyre::Result<String> {
     // precision = np_radix ^ np_precision
     // typically uses 2 or 10 as the radix, e.g. 2^32 or 10^20
     let columns_sql = "
@@ -580,6 +631,34 @@ pub async fn table_ddl(
     ))
 }
 
+pub async fn view_ddl(client: &Client, schema: &str, view: &str) -> eyre::Result<String> {
+    let sql = "
+    SELECT view_definition
+    FROM information_schema.views
+    WHERE table_schema = $1
+    AND table_name = $2";
+
+    let res = query(client, sql, &[&schema, &view]).await?;
+    Ok(res.rows[0][0].as_str().unwrap().to_owned())
+}
+
+pub async fn materialized_view_ddl(
+    client: &Client,
+    schema: &str,
+    view: &str,
+) -> eyre::Result<String> {
+    let sql = format!(
+        "SELECT view_definition
+        FROM (\n{}\n) _
+        WHERE table_schema = $1
+        AND table_name = $2",
+        client.mat_view_query,
+    );
+
+    let res = query(client, &sql, &[&schema, &view]).await?;
+    Ok(res.rows[0][0].as_str().unwrap().to_owned())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Sort {
     pub column_idx: usize,
@@ -614,7 +693,7 @@ impl std::str::FromStr for SortDirection {
 }
 
 pub async fn paginated_query(
-    client: &tokio_postgres::Client,
+    client: &Client,
     raw_query: &str,
     params: &[SqlParam<'_>],
     page: usize,
@@ -705,7 +784,7 @@ pub async fn paginated_query(
 }
 
 pub async fn query(
-    client: &tokio_postgres::Client,
+    client: &Client,
     raw_sql: &str,
     params: &[SqlParam<'_>],
 ) -> eyre::Result<QueryResult> {
@@ -731,7 +810,7 @@ pub async fn query(
 }
 
 async fn raw_query(
-    client: &tokio_postgres::Client,
+    client: &Client,
     query: &str,
     statement: &tokio_postgres::Statement,
     params: &[SqlParam<'_>],

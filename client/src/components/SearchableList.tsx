@@ -1,8 +1,21 @@
 import { useState } from "react";
-import { HiSearch as SearchIcon, HiX as XIcon } from "react-icons/hi";
+import {
+  HiCollection as MaterializedViewIcon,
+  HiMenu as TableIcon,
+  HiOutlineCollection as ViewIcon,
+  HiSearch as SearchIcon,
+  HiX as XIcon,
+} from "react-icons/hi";
+
+export type ListItemIcon = "table" | "view" | "materialized_view";
+
+export interface ListItem {
+  text: string;
+  icon?: ListItemIcon;
+}
 
 export interface Props {
-  items: string[];
+  items: ListItem[];
   loading: boolean;
   onClick: (item: string) => void;
 }
@@ -12,7 +25,7 @@ export default function SearchableList({ items, loading, onClick }: Props) {
 
   const lowerQuery = query.toLowerCase();
   const filteredItems = items.filter((item) =>
-    item.toLowerCase().includes(lowerQuery)
+    item.text.toLowerCase().includes(lowerQuery)
   );
 
   return (
@@ -48,21 +61,33 @@ export default function SearchableList({ items, loading, onClick }: Props) {
           )
           : (
             <ul className="pt-0 w-full menu text-xs">
-              {items.length === 0
+              {filteredItems.length === 0
                 ? (
                   <li className="p-4 opacity-50">
                     No results
                   </li>
                 )
                 : filteredItems.map((item) => (
-                  <li key={item} className="w-full">
+                  <li key={item.text} className="w-full">
                     <button
                       type="button"
-                      title={item}
-                      onClick={() => onClick(item)}
-                      className="block w-full overflow-hidden truncate"
+                      title={item.text}
+                      onClick={() =>
+                        onClick(item.text)}
+                      className="block w-full overflow-hidden"
                     >
-                      {item}
+                      <div className="flex items-center gap-2">
+                        {item.icon && (
+                          <div className="flex-shrink-0">
+                            {item.icon === "table"
+                              ? <TableIcon />
+                              : item.icon === "view"
+                              ? <ViewIcon />
+                              : <MaterializedViewIcon />}
+                          </div>
+                        )}
+                        <span className="truncate">{item.text}</span>
+                      </div>
                     </button>
                   </li>
                 ))}

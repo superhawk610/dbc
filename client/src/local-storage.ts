@@ -4,6 +4,9 @@
 class LocalStorageShim {
   private state: Record<string, string>;
 
+  // FIXME: send version along with initial hydrate; only seed when version
+  // doesn't match, and use real `window.localStorage` for persistence, so
+  // page reloading doesn't cause loss of state
   constructor(state: Record<string, string>) {
     this.state = state;
 

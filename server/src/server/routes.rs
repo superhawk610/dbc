@@ -148,9 +148,7 @@ pub async fn get_tables(
     Path(schema): Path<String>,
 ) -> eyre::Result<Json<crate::db::QueryRows>> {
     let conn = state.get_conn(connection.into(), database.into()).await?;
-    Ok(Json(
-        crate::db::list_tables(&conn, &schema).await?.row_maps(),
-    ))
+    Ok(Json(crate::db::list_tables(&conn, &schema).await?))
 }
 
 #[poem::handler]
@@ -180,6 +178,30 @@ pub async fn get_table_ddl(
 ) -> eyre::Result<Json<serde_json::Value>> {
     let conn = state.get_conn(connection.into(), database.into()).await?;
     let ddl = crate::db::table_ddl(&conn, &schema, &table).await?;
+    Ok(Json(serde_json::json!({ "ddl": ddl })))
+}
+
+#[poem::handler]
+pub async fn get_view_ddl(
+    TypedHeader(connection): TypedHeader<headers::XConnName>,
+    TypedHeader(database): TypedHeader<headers::XDatabase>,
+    Data(state): Data<&Arc<crate::State>>,
+    Path((schema, view)): Path<(String, String)>,
+) -> eyre::Result<Json<serde_json::Value>> {
+    let conn = state.get_conn(connection.into(), database.into()).await?;
+    let ddl = crate::db::view_ddl(&conn, &schema, &view).await?;
+    Ok(Json(serde_json::json!({ "ddl": ddl })))
+}
+
+#[poem::handler]
+pub async fn get_materialized_view_ddl(
+    TypedHeader(connection): TypedHeader<headers::XConnName>,
+    TypedHeader(database): TypedHeader<headers::XDatabase>,
+    Data(state): Data<&Arc<crate::State>>,
+    Path((schema, view)): Path<(String, String)>,
+) -> eyre::Result<Json<serde_json::Value>> {
+    let conn = state.get_conn(connection.into(), database.into()).await?;
+    let ddl = crate::db::materialized_view_ddl(&conn, &schema, &view).await?;
     Ok(Json(serde_json::json!({ "ddl": ddl })))
 }
 

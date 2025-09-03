@@ -79,8 +79,13 @@ async fn main() -> eyre::Result<()> {
                     get(routes::get_columns),
                 )
                 .at(
-                    "/ddl/schemas/:schema/tables/:table",
+                    "/ddl/schemas/:schema/table/:table",
                     get(routes::get_table_ddl),
+                )
+                .at("/ddl/schemas/:schema/view/:view", get(routes::get_view_ddl))
+                .at(
+                    "/ddl/schemas/:schema/materialized_view/:view",
+                    get(routes::get_materialized_view_ddl),
                 ),
         )
         .at(

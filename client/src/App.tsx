@@ -403,10 +403,17 @@ function App() {
             <div className="w-[300px] flex flex-col">
               <SearchableList
                 loading={tablesLoading}
-                items={tables?.map((t) => t.table_name) ?? []}
+                items={tables?.map((t) => ({
+                  text: t.table_name,
+                  icon: t.type,
+                })) ?? []}
                 onClick={async (table_name) => {
+                  const table = tables?.find((t) =>
+                    t.table_name === table_name
+                  )!;
+
                   const res = await get<{ ddl: string }>(
-                    `/db/ddl/schemas/${schema}/tables/${table_name}`,
+                    `/db/ddl/schemas/${schema}/${table.type}/${table_name}`,
                     undefined,
                     {
                       headers: {
@@ -423,7 +430,9 @@ function App() {
                   // open new editor tab
                   editorRef.current!.openTab({
                     id: `dbc://table/${table_name}`,
-                    name: `Table / ${table_name}`,
+                    name: `${
+                      table.type === "table" ? "Table" : "View"
+                    } / ${table_name}`,
                     language: "sql",
                     contents: res.ddl,
                     icon: "database",
