@@ -47,6 +47,7 @@ fn main() {
         .args(&["task", "build", "--outDir", asset_dir.to_str().unwrap()])
         .env("NODE_ENV", "production")
         .env("VITE_BUNDLED", "1")
+        .env("VITE_BUILD_VERSION", webview::VITE_BUILD_VERSION)
         .env("VITE_API_BASE", webview::VITE_API_BASE)
         .env("VITE_LOCAL_STORAGE", webview::VITE_LOCAL_STORAGE)
         .env("VITE_SHOW_LOGS", webview::VITE_SHOW_LOGS)

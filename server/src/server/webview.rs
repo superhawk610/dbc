@@ -1,4 +1,5 @@
 use poem::{EndpointExt, Route, Server, endpoint::StaticFilesEndpoint};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tao::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
@@ -14,11 +15,17 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const VITE_API_BASE: &str = "{{VITE_API_BASE}}";
 pub const VITE_LOCAL_STORAGE: &str = "{{VITE_LOCAL_STORAGE}}";
 pub const VITE_SHOW_LOGS: &str = "{{VITE_SHOW_LOGS}}";
+pub const VITE_BUILD_VERSION: &str = "{{VITE_BUILD_VERSION}}";
 
 pub struct WebView;
 
 impl WebView {
     pub async fn launch(server_port: u16) -> ! {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+
         // rehydrate localStorage, if it exists from a previous run
         let local_storage_file = crate::config_dir().join("localStorage.json");
         let local_storage = if local_storage_file.exists() {
@@ -38,6 +45,7 @@ impl WebView {
 
         let index = std::fs::read_to_string(&js_index_template).unwrap();
         let index = index
+            .replace(VITE_BUILD_VERSION, &format!("{}", timestamp))
             .replace(VITE_API_BASE, &format!("localhost:{}", server_port))
             .replace(
                 VITE_LOCAL_STORAGE,

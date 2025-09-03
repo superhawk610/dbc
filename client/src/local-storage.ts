@@ -1,14 +1,31 @@
+declare global {
+  var __localStorage__: Storage;
+}
+
 /**
  * Shim for `window.localStorage` that persists via server calls to `wry` window.
  */
 class LocalStorageShim {
-  private state: Record<string, string>;
+  static install(restoreState: Record<string, string>) {
+    globalThis.__localStorage__ = globalThis.localStorage;
+    Object.defineProperty(
+      globalThis,
+      "localStorage",
+      { value: new LocalStorageShim(restoreState) },
+    );
+  }
 
-  // FIXME: send version along with initial hydrate; only seed when version
-  // doesn't match, and use real `window.localStorage` for persistence, so
-  // page reloading doesn't cause loss of state
   constructor(state: Record<string, string>) {
-    this.state = state;
+    const version = import.meta.env.VITE_BUILD_VERSION;
+    if (globalThis.__localStorage__.getItem("__version__") === version) {
+      // if we've already seeded from a previous load, just use the existing state
+    } else {
+      // otherwise, seed local storage with the server's version and use that
+      globalThis.__localStorage__.setItem("__version__", version);
+      for (const [key, value] of Object.entries(state)) {
+        globalThis.__localStorage__.setItem(key, value);
+      }
+    }
 
     return new Proxy(this, {
       get: (target, key) => {
@@ -21,39 +38,42 @@ class LocalStorageShim {
   }
 
   get length() {
-    return Object.keys(this.state).length;
+    return Object.keys(globalThis.__localStorage__).length;
   }
 
   index(i: number) {
-    return this.state[Object.keys(this.state)[i]];
+    return globalThis
+      .__localStorage__[Object.keys(globalThis.__localStorage__)[i]];
   }
 
   key(i: number) {
-    return Object.keys(this.state)[i];
+    return Object.keys(globalThis.__localStorage__)[i];
   }
 
   getItem(key: string) {
-    return this.state[key];
+    return globalThis.__localStorage__.getItem(key);
   }
 
   setItem(key: string, value: string) {
-    this.state[key] = value;
-    persist(this.state);
+    globalThis.__localStorage__.setItem(key, value);
+    persist();
   }
 
   deleteItem(key: string) {
-    delete this.state[key];
-    persist(this.state);
+    globalThis.__localStorage__.deleteItem(key);
+    persist();
   }
 
   clear() {
-    this.state = {};
-    persist(this.state);
+    globalThis.__localStorage__.clear();
+    persist();
   }
 }
 
-function persist(state: Record<string, string>) {
-  globalThis.ipc.postMessage("local-storage:" + JSON.stringify(state));
+function persist() {
+  globalThis.ipc.postMessage(
+    "local-storage:" + JSON.stringify(globalThis.__localStorage__),
+  );
 }
 
 // When running bundled, persist local storage via backend.
@@ -61,9 +81,5 @@ function persist(state: Record<string, string>) {
 // `window.localStorage` manually on launch.
 if (import.meta.env.VITE_LOCAL_STORAGE) {
   const state = JSON.parse(import.meta.env.VITE_LOCAL_STORAGE);
-  Object.defineProperty(
-    globalThis,
-    "localStorage",
-    { value: new LocalStorageShim(state) },
-  );
+  LocalStorageShim.install(state);
 }
