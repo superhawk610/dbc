@@ -291,8 +291,8 @@ impl QueryResultColumn {
             return Ok(());
         }
 
-        let stmt = client.prepare(sql).await?;
-        let rows = raw_query(client, sql, &stmt, &[&table_ids, &column_ids]).await?;
+        let stmt = prepare(&client, sql).await?;
+        let rows = raw_query(client, &stmt, &[&table_ids, &column_ids]).await?;
 
         let attr_lookup: HashMap<(u32, i16), (String, String, String)> =
             HashMap::from_iter(rows.into_iter().map(|row| {
@@ -370,8 +370,8 @@ impl QueryResultColumn {
             .into_iter()
             .collect::<Vec<_>>();
 
-        let stmt = client.prepare(sql).await?;
-        let rows = raw_query(client, sql, &stmt, &[&table_schemas, &table_names]).await?;
+        let stmt = prepare(&client, sql).await?;
+        let rows = raw_query(client, &stmt, &[&table_schemas, &table_names]).await?;
 
         let fk_lookup: HashMap<(String, String), (String, String, String)> =
             HashMap::from_iter(rows.into_iter().map(|row| {
@@ -692,30 +692,41 @@ impl std::str::FromStr for SortDirection {
     }
 }
 
+fn dyn_params(params: &Vec<Box<dyn ToSql + Sync + Send>>) -> Vec<SqlParam<'_>> {
+    params.iter().map(|p| p.as_ref() as _).collect()
+}
+
 pub async fn paginated_query(
     client: &Client,
     raw_query: &str,
-    params: &[SqlParam<'_>],
+    params: &[serde_json::Value],
     page: usize,
     page_size: usize,
     sort: Option<Sort>,
 ) -> eyre::Result<PaginatedQueryResult> {
-    // fn indent(s: &str) -> String {
-    //     format!("  {}", s.replace('\n', "\n  "))
-    // }
+    let stmt = prepare(&client, raw_query).await?;
 
-    let base_query = parse_query(raw_query);
+    if stmt.params().len() != params.len() {
+        eyre::bail!(
+            "Expected {} params, got {}",
+            stmt.params().len(),
+            params.len()
+        );
+    }
 
-    // TODO: get number of affected rows
-    // - change return type for DDL queries
-    // - use `client.execute` to get number of affected rows
+    let base_query = stmt.sql.as_str();
+    let params = params
+        .iter()
+        .zip(stmt.params().iter().cloned())
+        .map(|(param, param_type)| from_json(param, param_type))
+        .collect::<Result<Vec<_>, _>>()?;
 
     // DDL queries can't be counted/paginated like normal queries, but we
     // still support a pagination wrapper around their results; they'll always
     // return a single result representing the DDL command's output
     let query_type = query_type(&base_query);
     if let QueryType::ModifyData | QueryType::ModifyStructure = query_type {
-        let affected_rows = client.execute(&base_query, params).await?;
+        let affected_rows = client.execute(&stmt.inner, &dyn_params(&params)).await?;
 
         return Ok(match query_type {
             QueryType::ModifyData => PaginatedQueryResult::ModifyData { affected_rows },
@@ -723,10 +734,6 @@ pub async fn paginated_query(
             _ => unreachable!(),
         });
     }
-
-    // TODO: indent in logging only; we need the un-indented query to have
-    // error posititions reported correctly
-    // let base_query = indent(&base_query);
 
     let count_query = format!("SELECT COUNT(*) FROM (\n{base_query}\n) _;");
 
@@ -741,26 +748,26 @@ pub async fn paginated_query(
 
     let (mut result, count_result) = futures_util::future::try_join(
         async {
-            query(client, &page_query, params).await.map_err(|err| {
-                match err.downcast::<PgError>() {
+            query(client, &page_query, &dyn_params(&params))
+                .await
+                .map_err(|err| match err.downcast::<PgError>() {
                     Ok(mut err) => {
                         err.offset_position(-16);
                         eyre::eyre!(err)
                     }
                     Err(err) => err,
-                }
-            })
+                })
         },
         async {
-            query(client, &count_query, params).await.map_err(|err| {
-                match err.downcast::<PgError>() {
+            query(client, &count_query, &dyn_params(&params))
+                .await
+                .map_err(|err| match err.downcast::<PgError>() {
                     Ok(mut err) => {
                         err.offset_position(-23);
                         eyre::eyre!(err)
                     }
                     Err(err) => err,
-                }
-            })
+                })
         },
     )
     .await?;
@@ -783,11 +790,22 @@ pub async fn paginated_query(
     })
 }
 
-pub async fn query(
-    client: &Client,
-    raw_sql: &str,
-    params: &[SqlParam<'_>],
-) -> eyre::Result<QueryResult> {
+#[derive(Debug)]
+pub struct PreparedStatement {
+    pub sql: String,
+    pub inner: tokio_postgres::Statement,
+    pub columns: Vec<QueryResultColumn>,
+}
+
+impl std::ops::Deref for PreparedStatement {
+    type Target = tokio_postgres::Statement;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+pub async fn prepare(client: &Client, raw_sql: &str) -> eyre::Result<PreparedStatement> {
     let sql = parse_query(raw_sql);
     let stmt = client.prepare(&sql).await.map_err(PgError::from)?;
 
@@ -803,21 +821,33 @@ pub async fn query(
         })
         .collect::<Vec<_>>();
 
-    Ok(QueryResult {
+    Ok(PreparedStatement {
+        sql,
+        inner: stmt,
         columns,
-        rows: raw_query(client, &sql, &stmt, params).await?,
+    })
+}
+
+pub async fn query(
+    client: &Client,
+    raw_sql: &str,
+    params: &[SqlParam<'_>],
+) -> eyre::Result<QueryResult> {
+    let stmt = prepare(client, raw_sql).await?;
+    Ok(QueryResult {
+        rows: raw_query(client, &stmt, params).await?,
+        columns: stmt.columns,
     })
 }
 
 async fn raw_query(
     client: &Client,
-    query: &str,
-    statement: &tokio_postgres::Statement,
+    statement: &PreparedStatement,
     params: &[SqlParam<'_>],
 ) -> eyre::Result<Vec<Vec<serde_json::Value>>> {
     if statement.columns().iter().all(col_supported) {
         let rows = client
-            .query(statement, params)
+            .query(&statement.inner, params)
             .await
             .map_err(PgError::from)?;
 
@@ -843,7 +873,10 @@ async fn raw_query(
             eyre::bail!("TEXT encoding does not support parameters");
         }
 
-        let rows = client.simple_query(&query).await.map_err(PgError::from)?;
+        let rows = client
+            .simple_query(&statement.sql)
+            .await
+            .map_err(PgError::from)?;
 
         let mut data_rows: Vec<Vec<serde_json::Value>> = Vec::with_capacity(rows.len());
         for cmd in rows {
@@ -882,6 +915,10 @@ struct PgErrorInner {
 }
 
 impl PgError {
+    pub fn has_extended(&self) -> bool {
+        self.inner.is_some()
+    }
+
     pub fn code(&self) -> Option<&String> {
         self.inner.as_ref().map(|inner| &inner.code)
     }
@@ -1136,5 +1173,31 @@ fn to_json(
                 }
             }
         }
+    }
+}
+
+fn from_json(
+    json: &serde_json::Value,
+    type_: tokio_postgres::types::Type,
+) -> eyre::Result<Box<dyn ToSql + Sync + Send>> {
+    use tokio_postgres::types::Type;
+    match type_ {
+        Type::TEXT | Type::VARCHAR | Type::NAME | Type::CHAR => json
+            .as_str()
+            .ok_or(eyre::eyre!("expected string"))
+            .map(|s| Box::new(s.to_owned()) as _),
+        Type::BOOL => json
+            .as_bool()
+            .ok_or(eyre::eyre!("expected boolean"))
+            .map(|b| Box::new(b) as _),
+        Type::INT8 | Type::INT4 | Type::INT2 => json
+            .as_i64()
+            .ok_or(eyre::eyre!("expected i64"))
+            .map(|i| Box::new(i) as _),
+        Type::FLOAT8 | Type::FLOAT4 | Type::NUMERIC => json
+            .as_f64()
+            .ok_or(eyre::eyre!("expected f64"))
+            .map(|i| Box::new(i) as _),
+        _ => Err(eyre::eyre!("unsupported type: {:?}", type_)),
     }
 }

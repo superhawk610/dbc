@@ -9,6 +9,7 @@ import {
   get,
   NetworkError,
   paginatedQuery,
+  prepareQuery,
   rawDefaultQuery,
   rawQuery,
 } from "./api.ts";
@@ -287,11 +288,19 @@ function App() {
       setError(null);
       setLoading(true);
 
+      // FIXME: improved modal for parameter input
+      const prepareRes = await prepareQuery(connection!.name, database!, query);
+      const params: string[] = [];
+      for (const param of prepareRes.params) {
+        params.push(prompt(`${param.name} (${param.type})`) || "");
+      }
+
       const res = await paginatedQuery(
         connection!.name,
         database!,
         {
           query,
+          params,
           sort,
           page,
           pageSize,
@@ -336,7 +345,7 @@ function App() {
       setError(err.message);
       setRes(null);
 
-      if (err.details?.position !== null) {
+      if (err.details && err.details.position !== null) {
         editorRef.current!.addError(
           err.message,
           err.details!.position as number,

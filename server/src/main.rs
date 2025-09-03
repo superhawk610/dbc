@@ -92,7 +92,8 @@ async fn main() -> eyre::Result<()> {
             "/config",
             get(routes::get_config).put(routes::update_config),
         )
-        .at("/query", post(routes::handle_query));
+        .at("/query", post(routes::handle_query))
+        .at("/prepare", post(routes::prepare_query));
 
     #[cfg(debug_assertions)]
     let router = router.nest(

@@ -48,3 +48,14 @@ export interface PaginatedModifyDataQueryResult {
 export interface PaginatedModifyStructureQueryResult {
   type: "modify-structure";
 }
+
+export interface QueryParam {
+  name: string;
+  // TODO: enumerate types
+  type: string;
+}
+
+export interface PrepareQueryResult {
+  columns: QueryColumn[];
+  params: QueryParam[];
+}

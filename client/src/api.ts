@@ -1,4 +1,8 @@
-import { PaginatedQueryResult, Sort } from "./models/query.ts";
+import {
+  PaginatedQueryResult,
+  PrepareQueryResult,
+  Sort,
+} from "./models/query.ts";
 
 const baseUrl = `http://${import.meta.env.VITE_API_BASE}`;
 const socketUrl = `ws://${import.meta.env.VITE_API_BASE}`;
@@ -143,8 +147,18 @@ export const rawQuery = <T>(
     headers: { "x-conn-name": connection, "x-database": database },
   });
 
+export const prepareQuery = (
+  connection: string,
+  database: string,
+  query: string,
+) =>
+  post<PrepareQueryResult>("/prepare", { query }, {
+    headers: { "x-conn-name": connection, "x-database": database },
+  });
+
 export interface PaginatedQueryRequest {
   query: string;
+  params: Array<string | number | boolean | null>;
   sort: Sort | null;
   page: number;
   pageSize: number;
@@ -159,6 +173,7 @@ export const paginatedQuery = (
 ) =>
   post<PaginatedQueryResult>("/query", {
     query: req.query,
+    params: req.params,
     sort: req.sort,
     page: req.page,
     page_size: req.pageSize,

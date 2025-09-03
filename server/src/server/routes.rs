@@ -208,13 +208,14 @@ pub async fn get_materialized_view_ddl(
 #[derive(Deserialize)]
 struct QueryParams {
     pub query: String,
+    pub params: Option<Vec<serde_json::Value>>,
     pub sort: Option<crate::db::Sort>,
     pub page: usize,
     pub page_size: usize,
 }
 
 #[derive(Debug)]
-enum PaginatedQueryError {
+pub enum PaginatedQueryError {
     Eyre(eyre::Report),
     DbError(crate::db::PgError),
 }
@@ -247,16 +248,20 @@ impl poem::error::ResponseError for PaginatedQueryError {
             }
 
             PaginatedQueryError::DbError(err) => {
-                return res.content_type("application/json").body(
-                    serde_json::json!({
-                        "type": "PgError",
-                        "code": err.code(),
-                        "position": err.position(),
-                        "message": err.message(),
-                        "severity": err.severity(),
-                    })
-                    .to_string(),
-                );
+                if err.has_extended() {
+                    return res.content_type("application/json").body(
+                        serde_json::json!({
+                            "type": "PgError",
+                            "code": err.code(),
+                            "position": err.position(),
+                            "message": err.message(),
+                            "severity": err.severity(),
+                        })
+                        .to_string(),
+                    );
+                } else {
+                    return res.body(format!("{}", err));
+                }
             }
         }
     }
@@ -277,7 +282,7 @@ pub async fn handle_query(
         crate::db::paginated_query(
             &conn,
             &params.query,
-            &[],
+            &params.params.unwrap_or_default(),
             params.page,
             params.page_size,
             params.sort,
@@ -288,4 +293,36 @@ pub async fn handle_query(
             Err(err) => PaginatedQueryError::Eyre(err),
         })?,
     ))
+}
+
+#[derive(Deserialize)]
+pub struct PrepareQueryParams {
+    pub query: String,
+}
+
+#[poem::handler]
+pub async fn prepare_query(
+    TypedHeader(connection): TypedHeader<headers::XConnName>,
+    TypedHeader(database): TypedHeader<headers::XDatabase>,
+    Data(state): Data<&Arc<crate::State>>,
+    Json(params): Json<PrepareQueryParams>,
+) -> Result<Json<serde_json::Value>, PaginatedQueryError> {
+    let conn = state
+        .get_conn(connection.into(), database.into())
+        .await
+        .map_err(|err| PaginatedQueryError::Eyre(err))?;
+    let stmt = crate::db::prepare(&conn, &params.query)
+        .await
+        .map_err(|err| match err.downcast::<crate::db::PgError>() {
+            Ok(err) => PaginatedQueryError::DbError(err),
+            Err(err) => PaginatedQueryError::Eyre(err),
+        })?;
+
+    Ok(Json(serde_json::json!({
+        "columns": stmt.columns,
+        "params": stmt.params().iter().enumerate().map(|(i, p)| serde_json::json!({
+            "name": format!("${}", i + 1),
+            "type": p.name(),
+        })).collect::<Vec<_>>(),
+    })))
 }
