@@ -22,11 +22,11 @@ import DatabaseSelect from "./components/editor/DatabaseSelect.tsx";
 import SchemaSelect, {
   getLastSchema,
 } from "./components/editor/SchemaSelect.tsx";
-import QueryResults from "./components/QueryResults.tsx";
+import QueryResults from "./components/results/QueryResults.tsx";
 import Pagination from "./components/Pagination.tsx";
 import Config from "./models/config.ts";
 import Connection from "./models/connection.ts";
-import { PaginatedQueryResult, Sort } from "./models/query.ts";
+import { Filter, PaginatedQueryResult, Sort } from "./models/query.ts";
 import Database from "./models/database.ts";
 import Schema from "./models/schema.ts";
 import Table from "./models/table.ts";
@@ -45,6 +45,7 @@ interface LastQuery {
   sort: Sort | null;
   page: number;
   pageSize: number;
+  filters: Filter[];
   abort: AbortController;
 }
 
@@ -80,7 +81,8 @@ function App() {
   const [sort, setSort] = useState<Sort | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
-  const queryRef = useRef({} as LastQuery);
+  const [filters, setFilters] = useState<Filter[]>([]);
+  const queryRef = useRef({ filters } as LastQuery);
 
   useResize({
     active: showResults,
@@ -240,9 +242,11 @@ function App() {
       setShowResults(true);
     }
 
-    // reset to the first page and unsorted results on submit
+    // reset to the first page and unsorted/unfiltered results on submit
     setPage(1);
     setSort(null);
+    setFilters([]);
+    queryRef.current.filters = [];
     dispatchQuery(query, null, 1, pageSize, !useCache, offset);
   }
 
@@ -288,7 +292,7 @@ function App() {
       setError(null);
       setLoading(true);
 
-      // FIXME: improved modal for parameter input
+      // FIXME: improved modal for parameter input (globalThis.prompt doesn't work in wry)
       const prepareRes = await prepareQuery(connection!.name, database!, query);
       const params: string[] = [];
       for (const param of prepareRes.params) {
@@ -304,6 +308,7 @@ function App() {
           sort,
           page,
           pageSize,
+          filters: queryRef.current.filters,
           useCache,
           signal: abort.signal,
         },
@@ -512,12 +517,13 @@ function App() {
         <div className="flex-1 flex flex-col bg-base-300 overflow-y-auto">
           <div
             ref={resizeHandleRef}
-            className="bg-base-content/10 h-1 cursor-ns-resize z-[10]"
+            className="bg-base-200 h-1 cursor-ns-resize z-10"
           />
 
           <QueryResults
             key={resultsKey(queryRef.current)}
             page={res}
+            filters={filters}
             error={error}
             loading={loading}
             onCancel={() => {
@@ -526,7 +532,22 @@ function App() {
               setLoading(false);
             }}
             onToggleSort={(column_idx, direction) =>
-              setSort({ column_idx, direction })}
+              setSort(direction ? { column_idx, direction } : null)}
+            onFilterChange={(filters) => setFilters(filters)}
+            onFilterApply={(filters) => {
+              // only update filters and dispatch query when explicitly requested;
+              // don't do anything in a `useEffect` when `filters` changes, because
+              // that happens every time the user types
+              queryRef.current.filters = filters;
+
+              dispatchQuery(
+                queryRef.current.query,
+                sort,
+                page,
+                pageSize,
+                true,
+              );
+            }}
             onForeignKeyClick={(column, value) => {
               const query =
                 `SELECT * FROM ${column.fk_table} WHERE ${column.fk_column} = ${
@@ -543,6 +564,15 @@ function App() {
 
               // open new tab and submit query
               submitQuery(query);
+            }}
+            onViewValueClick={(value) => {
+              editorRef.current!.openTab({
+                id: `dbc://cell/${Date.now()}`,
+                name: "Cell / Value",
+                language: "text",
+                contents: value!.toString(),
+                icon: "cube",
+              });
             }}
           />
         </div>

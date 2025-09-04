@@ -1,4 +1,5 @@
 import {
+  Filter,
   PaginatedQueryResult,
   PrepareQueryResult,
   Sort,
@@ -162,6 +163,7 @@ export interface PaginatedQueryRequest {
   sort: Sort | null;
   page: number;
   pageSize: number;
+  filters: Filter[];
   useCache: boolean;
   signal?: AbortSignal;
 }
@@ -177,6 +179,7 @@ export const paginatedQuery = (
     sort: req.sort,
     page: req.page,
     page_size: req.pageSize,
+    filters: req.filters,
   }, {
     signal: req.signal,
     cacheTimeoutSec: req.useCache ? CACHE_TIMEOUT_SEC : -1,

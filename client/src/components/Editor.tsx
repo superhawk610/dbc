@@ -18,6 +18,7 @@ import {
 import {
   HiDatabase as DatabaseIcon,
   HiDocumentText as TabIcon,
+  HiOutlineCube as CubeIcon,
   HiX as XIcon,
 } from "react-icons/hi";
 import DbcCompletionProvider, {
@@ -535,6 +536,8 @@ export default forwardRef(
                       <div className="mr-1">
                         {tab.icon === "database"
                           ? <DatabaseIcon />
+                          : tab.icon === "cube"
+                          ? <CubeIcon />
                           : <TabIcon />}
                       </div>
                       <span className="min-w-32 max-w-56 mr-2 py-1 overflow-hidden whitespace-nowrap text-ellipsis">

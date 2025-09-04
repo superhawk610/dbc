@@ -21,10 +21,12 @@ class LocalStorageShim {
       // if we've already seeded from a previous load, just use the existing state
     } else {
       // otherwise, seed local storage with the server's version and use that
-      globalThis.__localStorage__.setItem("__version__", version);
       for (const [key, value] of Object.entries(state)) {
         globalThis.__localStorage__.setItem(key, value);
       }
+
+      // set __version__ last to make sure it wins out over any previously-set version
+      globalThis.__localStorage__.setItem("__version__", version);
     }
 
     return new Proxy(this, {

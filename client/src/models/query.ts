@@ -4,6 +4,12 @@ export default interface QueryRow {
 
 export type QueryValue = string | number | boolean | null | QueryValue[];
 
+export interface Filter {
+  column: string;
+  operator: "eq" | "neq" | "null" | "not_null";
+  value: string;
+}
+
 export interface QueryColumn {
   type: string;
   name: string;

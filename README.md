@@ -37,6 +37,14 @@ $ ./bundle.rs --install
 The application is built primarily for MacOS, but should work on other platforms in
 non-bundled mode, and with minimal tweaks when bundled.
 
+## Roadmap
+
+- [ ] Improved modal for parameter input
+- [ ] Improve autocomplete for join field names
+- [ ] Support non-string data types for filtering
+- [ ] Cache editor themes during build to improve launch times
+- [ ] Improve script-based password loading (real-time output, timeouts)
+
 ## License
 
 Published under the AGPLv3 license. &copy; 2025 Aaron Ross. All rights reserved.

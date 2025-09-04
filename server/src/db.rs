@@ -178,6 +178,51 @@ pub async fn connect(config: &Config) -> eyre::Result<Connection> {
     })
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FilterOp {
+    Eq,
+    Neq,
+    Null,
+    NotNull,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Filter {
+    pub column: String,
+    pub operator: FilterOp,
+    pub value: String,
+}
+
+impl Filter {
+    pub fn where_clause(&self, param_idx: usize) -> (bool, String) {
+        if self.uses_param() {
+            (
+                true,
+                format!("{} {} ${}", self.column, self.sql_op(), param_idx + 1),
+            )
+        } else {
+            (false, format!("{} {}", self.column, self.sql_op()))
+        }
+    }
+
+    fn sql_op(&self) -> &'static str {
+        match self.operator {
+            FilterOp::Eq => "=",
+            FilterOp::Neq => "!=",
+            FilterOp::Null => "IS NULL",
+            FilterOp::NotNull => "IS NOT NULL",
+        }
+    }
+
+    pub fn uses_param(&self) -> bool {
+        match self.operator {
+            FilterOp::Null | FilterOp::NotNull => false,
+            _ => true,
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct QueryResult {
     pub columns: Vec<QueryResultColumn>,
@@ -700,16 +745,45 @@ pub async fn paginated_query(
     client: &Client,
     raw_query: &str,
     params: &[serde_json::Value],
+    filters: &[Filter],
     page: usize,
     page_size: usize,
     sort: Option<Sort>,
 ) -> eyre::Result<PaginatedQueryResult> {
-    let stmt = prepare(&client, raw_query).await?;
+    let raw_query = parse_query(raw_query);
 
-    if stmt.params().len() != params.len() {
+    let filtered_query = format!(
+        "SELECT * FROM (\n{raw_query}\n) _ {}{}",
+        if filters.is_empty() { "" } else { "WHERE " },
+        filters
+            .iter()
+            .scan(0, |i, f| {
+                match f.where_clause(*i) {
+                    (true, clause) => {
+                        *i = *i + 1;
+                        Some(clause)
+                    }
+                    (false, clause) => Some(clause),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" AND ")
+    );
+
+    let filter_params = filters
+        .iter()
+        .filter_map(|f| {
+            f.uses_param()
+                .then(|| serde_json::Value::String(f.value.clone()))
+        })
+        .collect::<Vec<_>>();
+
+    let stmt = prepare(&client, &filtered_query).await?;
+
+    if stmt.params().len() != params.len() + filter_params.len() {
         eyre::bail!(
             "Expected {} params, got {}",
-            stmt.params().len(),
+            stmt.params().len() - filter_params.len(),
             params.len()
         );
     }
@@ -717,6 +791,7 @@ pub async fn paginated_query(
     let base_query = stmt.sql.as_str();
     let params = params
         .iter()
+        .chain(filter_params.iter())
         .zip(stmt.params().iter().cloned())
         .map(|(param, param_type)| from_json(param, param_type))
         .collect::<Result<Vec<_>, _>>()?;
@@ -752,7 +827,7 @@ pub async fn paginated_query(
                 .await
                 .map_err(|err| match err.downcast::<PgError>() {
                     Ok(mut err) => {
-                        err.offset_position(-16);
+                        err.offset_position(-32);
                         eyre::eyre!(err)
                     }
                     Err(err) => err,
@@ -763,7 +838,7 @@ pub async fn paginated_query(
                 .await
                 .map_err(|err| match err.downcast::<PgError>() {
                     Ok(mut err) => {
-                        err.offset_position(-23);
+                        err.offset_position(-39);
                         eyre::eyre!(err)
                     }
                     Err(err) => err,
@@ -989,6 +1064,7 @@ impl From<tokio_postgres::error::Error> for PgError {
     }
 }
 
+/// Remove any comments and takes the first semicolon-delimited query.
 fn parse_query(query: &str) -> String {
     // remove any comments
     let mut chars = query.chars().peekable();

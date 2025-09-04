@@ -212,6 +212,7 @@ struct QueryParams {
     pub sort: Option<crate::db::Sort>,
     pub page: usize,
     pub page_size: usize,
+    pub filters: Option<Vec<crate::db::Filter>>,
 }
 
 #[derive(Debug)]
@@ -283,6 +284,7 @@ pub async fn handle_query(
             &conn,
             &params.query,
             &params.params.unwrap_or_default(),
+            &params.filters.unwrap_or_default(),
             params.page,
             params.page_size,
             params.sort,
