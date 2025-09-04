@@ -208,7 +208,7 @@ function SettingsModalBody({ actions, onSave }: SettingsModalBodyProps) {
           <Field
             type="checkbox"
             name="ssl"
-            defaultValue={connection?.ssl}
+            defaultChecked={connection?.ssl}
             label="Use SSL"
           />
         </Fieldset>

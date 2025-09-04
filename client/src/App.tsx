@@ -26,11 +26,17 @@ import QueryResults from "./components/results/QueryResults.tsx";
 import Pagination from "./components/Pagination.tsx";
 import Config from "./models/config.ts";
 import Connection from "./models/connection.ts";
-import { Filter, PaginatedQueryResult, Sort } from "./models/query.ts";
+import {
+  Filter,
+  PaginatedQueryResult,
+  QueryParam,
+  Sort,
+} from "./models/query.ts";
 import Database from "./models/database.ts";
 import Schema from "./models/schema.ts";
 import Table from "./models/table.ts";
 import SettingsModal from "./components/SettingsModal.tsx";
+import ParamModal from "./components/ParamModal.tsx";
 import useConnectionVersion from "./hooks/useConnectionVersion.ts";
 import Field from "./components/form/Field.tsx";
 import SearchableList from "./components/SearchableList.tsx";
@@ -45,7 +51,9 @@ interface LastQuery {
   sort: Sort | null;
   page: number;
   pageSize: number;
+  params: string[];
   filters: Filter[];
+  offset: number | undefined;
   abort: AbortController;
 }
 
@@ -60,6 +68,8 @@ function App() {
   const resizeHandleRef = useRef<HTMLDivElement>(null);
   const [showResults, setShowResults] = useState(false);
   const [settingsModalActive, setSettingsModalsActive] = useState(false);
+  const [paramModalActive, setParamModalActive] = useState(false);
+  const [queryParams, setQueryParams] = useState<QueryParam[]>([]);
 
   const [res, setRes] = useState<PaginatedQueryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -247,7 +257,29 @@ function App() {
     setSort(null);
     setFilters([]);
     queryRef.current.filters = [];
-    dispatchQuery(query, null, 1, pageSize, !useCache, offset);
+    const prevParams = queryRef.current.params || [];
+    queryRef.current.params = [];
+    dispatchQuery(
+      query,
+      null,
+      1,
+      pageSize,
+      !useCache || prevParams.length > 0,
+      offset,
+    );
+  }
+
+  function handleParamSubmit(params: string[]) {
+    setParamModalActive(false);
+    queryRef.current.params = params;
+    dispatchQuery(
+      queryRef.current.query,
+      queryRef.current.sort,
+      queryRef.current.page,
+      queryRef.current.pageSize,
+      true,
+      queryRef.current.offset,
+    );
   }
 
   async function dispatchQuery(
@@ -278,26 +310,38 @@ function App() {
     queryRef.current.sort = sort;
     queryRef.current.page = page;
     queryRef.current.pageSize = pageSize;
-
-    // show results pane
-    setShowResults(true);
-
-    // clear any previously set errors
-    editorRef.current!.clearErrors();
+    queryRef.current.offset = offset;
 
     const abort = new AbortController();
-    queryRef.current.abort = abort;
 
     try {
       setError(null);
       setLoading(true);
 
-      // FIXME: improved modal for parameter input (globalThis.prompt doesn't work in wry)
-      const prepareRes = await prepareQuery(connection!.name, database!, query);
-      const params: string[] = [];
-      for (const param of prepareRes.params) {
-        params.push(prompt(`${param.name} (${param.type})`) || "");
+      let params: string[] = [];
+      if (queryRef.current.params && queryRef.current.params.length > 0) {
+        params = queryRef.current.params;
+      } else {
+        const prepareRes = await prepareQuery(
+          connection!.name,
+          database!,
+          query,
+        );
+        if (prepareRes.params.length > 0) {
+          setShowResults(false);
+          setQueryParams(prepareRes.params);
+          setParamModalActive(true);
+          return;
+        }
       }
+
+      // show results pane
+      setShowResults(true);
+
+      // clear any previously set errors
+      editorRef.current!.clearErrors();
+
+      queryRef.current.abort = abort;
 
       const res = await paginatedQuery(
         connection!.name,
@@ -327,7 +371,6 @@ function App() {
             `/db/schemas/${schema}/tables`,
           );
           setTables(tables);
-          console.log(tables);
 
           break;
         }
@@ -511,6 +554,17 @@ function App() {
         active={settingsModalActive}
         onClose={() => setSettingsModalsActive(false)}
         onSave={handleSave}
+      />
+
+      <ParamModal
+        params={queryParams}
+        active={paramModalActive}
+        onClose={() => {
+          // reset query ref so that subsequent queries ignore the in-progress param fetch
+          queryRef.current = { filters: [] } as unknown as LastQuery;
+          setParamModalActive(false);
+        }}
+        onSubmit={handleParamSubmit}
       />
 
       {showResults && (

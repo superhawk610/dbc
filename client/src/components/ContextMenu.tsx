@@ -62,7 +62,7 @@ export default function ContextMenu(
   return (
     <ul
       ref={ref}
-      className="fixed z-50 w-64 text-sm bg-base-100 text-base-content rounded-sm overflow-hidden shadow-lg cursor-pointer"
+      className="fixed z-50 w-64 text-xs bg-base-100 text-base-content rounded-sm overflow-hidden shadow-lg cursor-pointer"
       style={{ top: `${y! - 10}px`, left: `${x! + 10}px` }}
     >
       {items.map((item) => (

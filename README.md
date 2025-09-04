@@ -39,7 +39,7 @@ non-bundled mode, and with minimal tweaks when bundled.
 
 ## Roadmap
 
-- [ ] Improved modal for parameter input
+- [x] Improved modal for parameter input
 - [ ] Improve autocomplete for join field names
 - [ ] Support non-string data types for filtering
 - [ ] Cache editor themes during build to improve launch times

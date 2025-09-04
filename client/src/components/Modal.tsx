@@ -2,16 +2,17 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { DivProps } from "react-html-props";
 
 export interface ModalActions {
-  close: () => void;
+  // If `notify` is false, the parent's `onClose` prop will not be called.
+  close: (notify: boolean) => void;
 }
 
 export const closeModal =
-  ({ close }: ModalActions) => (ev: React.MouseEvent) => {
+  ({ close }: ModalActions) => (ev: React.MouseEvent, notify = true) => {
     ev.preventDefault();
     (ev.target as HTMLElement)!.closest("dialog")!.close();
 
     // wait for modal to disappear from screen before hiding body
-    setTimeout(() => close(), 1_000);
+    setTimeout(() => close(notify), 1_000);
   };
 
 function ModalBody({ children, ...props }: DivProps) {
@@ -43,7 +44,7 @@ export interface Props extends ModalControlProps {
   size?: "default" | "medium" | "large";
 
   // managed control
-  buttonText: React.ReactNode;
+  buttonText?: React.ReactNode;
 }
 
 function Modal(
@@ -89,9 +90,9 @@ function Modal(
         >
           <h3 className="font-bold text-lg">{heading}</h3>
           {showBody && children({
-            close: () => {
+            close: (notify: boolean) => {
               setShowBody(false);
-              onClose?.();
+              if (notify) onClose?.();
             },
           })}
         </div>
