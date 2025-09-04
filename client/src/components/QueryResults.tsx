@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   HiArrowDown as SortDescIcon,
   HiArrowRight as ForeignKeyIcon,
@@ -10,6 +10,7 @@ import {
   QueryColumn,
   QueryValue,
 } from "../models/query.ts";
+import useClickAway from "../hooks/useClickAway.ts";
 
 interface TimerInterval {
   since: number;
@@ -31,6 +32,11 @@ export default function QueryResults(
   const timerRef = useRef<HTMLDivElement | null>(null);
   const timerIntervalRef = useRef<TimerInterval | null>(null);
   const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [activeCell, setActiveCell] = useState<
+    { row: number; col: number } | null
+  >(null);
+
+  const containerRef = useClickAway<HTMLDivElement>(() => setActiveCell(null));
 
   useEffect(() => {
     function cleanUp() {
@@ -119,6 +125,7 @@ export default function QueryResults(
 
   return (
     <div
+      ref={containerRef}
       className={`flex-1 overflow-auto bg-base-300 ${
         loading ? "opacity-30" : ""
       }`}
@@ -181,33 +188,48 @@ export default function QueryResults(
                 </td>
               </tr>
             )
-            : page.entries.rows.map((row, idx) => (
-              <tr key={idx}>
-                {row.map((value: QueryValue, idx: number) => {
-                  const column = page.entries.columns[idx];
+            : page.entries.rows.map((row, rowIdx) => (
+              <tr key={rowIdx}>
+                {row.map((value: QueryValue, colIdx: number) => {
+                  const column = page.entries.columns[colIdx];
 
                   return (
-                    <td key={idx} className="border-r border-neutral-500/10">
-                      <div className="group flex items-center justify-between">
-                        {value === true
-                          ? "true"
-                          : value === false
-                          ? "false"
-                          : value === null
-                          ? (
-                            <span className="text-base-content/40">
-                              null
-                            </span>
-                          )
-                          : (Array.isArray(value) || typeof value === "object")
-                          ? (
-                            <span className="font-mono">
-                              {JSON.stringify(value, null, 2)}
-                            </span>
-                          )
-                          : value}
+                    <td
+                      key={colIdx}
+                      className={`relative cursor-default border-r border-neutral-500/10 ${
+                        activeCell?.row === rowIdx ? "bg-primary/30" : ""
+                      }`}
+                      onClick={() =>
+                        setActiveCell({ row: rowIdx, col: colIdx })}
+                    >
+                      {activeCell?.row === rowIdx &&
+                        activeCell?.col === colIdx && (
+                        <div className="absolute z-10 inset-0 ring-2 ring-primary" />
+                      )}
+                      <div className="group relative flex items-center justify-between overflow-hidden">
+                        <div className="truncate max-w-[600px]">
+                          {value === true
+                            ? "true"
+                            : value === false
+                            ? "false"
+                            : value === null
+                            ? (
+                              <span className="text-base-content/40">
+                                null
+                              </span>
+                            )
+                            : (Array.isArray(value) ||
+                                typeof value === "object")
+                            ? (
+                              <span className="font-mono">
+                                {JSON.stringify(value, null, 2)}
+                              </span>
+                            )
+                            : value}
+                        </div>
 
-                        <div className="ml-2 flex items-center gap-1.5 transition-opacity opacity-0 group-hover:opacity-100 ">
+                        <div className="absolute top-0 right-0 z-10 flex items-center gap-1.5
+                        transition-opacity opacity-0 group-hover:opacity-100 ">
                           {value !== null && (
                             <button
                               type="button"
