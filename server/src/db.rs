@@ -4,6 +4,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 use std::collections::{HashMap, HashSet};
+use time::macros::format_description;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::oneshot::{Receiver, Sender, channel};
 use tokio_postgres::{Socket, types::ToSql};
@@ -1217,24 +1218,26 @@ fn to_json(
             Some(val.into())
         }
         Type::DATE => {
-            use time::format_description::well_known::Iso8601;
+            let iso_date = format_description!("[year]-[month]-[day]");
             let val: Option<time::Date> = row.get(idx);
-            Some(val.map(|d| d.format(&Iso8601::DATE).unwrap()).into())
+            Some(val.map(|d| d.format(&iso_date).unwrap()).into())
         }
         Type::TIME => {
-            use time::format_description::well_known::Iso8601;
+            let iso_time = format_description!("[hour]:[minute]:[second]");
             let val: Option<time::Time> = row.get(idx);
-            Some(val.map(|t| t.format(&Iso8601::TIME).unwrap()).into())
+            Some(val.map(|t| t.format(&iso_time).unwrap()).into())
         }
         Type::TIMESTAMP => {
-            use time::format_description::well_known::Iso8601;
+            let iso_datetime = format_description!("[year]-[month]-[day] [hour]:[minute]:[second]");
             let val: Option<time::PrimitiveDateTime> = row.get(idx);
-            Some(val.map(|t| t.format(&Iso8601::DATE_TIME).unwrap()).into())
+            Some(val.map(|t| t.format(&iso_datetime).unwrap()).into())
         }
         Type::TIMESTAMPTZ => {
-            use time::format_description::well_known::Iso8601;
+            let iso_datetime_tz = format_description!(
+                "[year]-[month]-[day] [hour]:[minute]:[second] [offset_hour]:[offset_minute]"
+            );
             let val: Option<time::OffsetDateTime> = row.get(idx);
-            Some(val.map(|t| t.format(&Iso8601::DEFAULT).unwrap()).into())
+            Some(val.map(|t| t.format(&iso_datetime_tz).unwrap()).into())
         }
         _ => {
             match col.type_().name() {
