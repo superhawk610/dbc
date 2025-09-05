@@ -160,6 +160,8 @@ export default class DbcCompletionProvider
         // remove trailing `.`
         prevToken = prevToken.slice(0, prevToken.length - 1);
 
+        // TODO: auto-complete for `SELECT` fields, if using the `alias.field` syntax
+
         // if the token before the schema name is `on`, then we're completing a join condition,
         // so we should list columns from the table; similarly, if the token before the schema
         // name is `=`, then we're completing a condition in a `join` clause

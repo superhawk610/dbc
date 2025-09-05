@@ -85,26 +85,28 @@ impl std::ops::Deref for Client {
 
 impl Client {
     pub async fn new(inner: tokio_postgres::Client) -> eyre::Result<Self> {
-        let mat_view_query = inner
-            .query_one(
-                "select view_definition
-                from information_schema.views
-                where table_schema = 'information_schema'
-                and table_name = 'views'",
-                &[],
-            )
-            .await
-            .map_err(PgError::from)
-            .map(|row| row.get::<_, String>(0))
-            .unwrap()
-            // by default, this view selects views; we want materialized views instead
-            .replace("c.relkind = 'v'", "c.relkind = 'm'")
-            .trim_end_matches(';')
-            .to_owned();
+        // FIXME: this doesn't work on unprivileged databases that won't allow you to query
+        // the definition of the `views` view, ugh. probably need to just hard-code it here
+        // let mat_view_query = inner
+        //     .query_one(
+        //         "select view_definition
+        //         from information_schema.views
+        //         where table_schema = 'information_schema'
+        //         and table_name = 'views'",
+        //         &[],
+        //     )
+        //     .await
+        //     .map_err(PgError::from)
+        //     .map(|row| row.get::<_, String>(0))
+        //     .unwrap()
+        //     // by default, this view selects views; we want materialized views instead
+        //     .replace("c.relkind = 'v'", "c.relkind = 'm'")
+        //     .trim_end_matches(';')
+        //     .to_owned();
 
         Ok(Self {
             inner,
-            mat_view_query,
+            mat_view_query: "".to_owned(),
         })
     }
 }
@@ -528,18 +530,18 @@ pub async fn list_tables(client: &Client, schema: &str) -> eyre::Result<QueryRow
     WHERE table_schema = $1
     ORDER BY table_name";
 
-    let mat_view_sql = format!(
-        "SELECT 'materialized_view' as type, *
-        FROM (\n{}\n) _
-        WHERE table_schema = $1
-        ORDER BY table_name",
-        client.mat_view_query
-    );
+    // let mat_view_sql = format!(
+    //     "SELECT 'materialized_view' as type, *
+    //     FROM (\n{}\n) _
+    //     WHERE table_schema = $1
+    //     ORDER BY table_name",
+    //     client.mat_view_query
+    // );
 
-    let (tables, views, mat_views) = futures_util::future::try_join3(
+    let (tables, views) = futures_util::future::try_join(
         query(client, table_sql, &[&schema]),
         query(client, view_sql, &[&schema]),
-        query(client, &mat_view_sql, &[&schema]),
+        // query(client, &mat_view_sql, &[&schema]),
     )
     .await?;
 
@@ -547,7 +549,7 @@ pub async fn list_tables(client: &Client, schema: &str) -> eyre::Result<QueryRow
         .row_maps()
         .into_iter()
         .chain(views.row_maps().into_iter())
-        .chain(mat_views.row_maps().into_iter())
+        // .chain(mat_views.row_maps().into_iter())
         .collect())
 }
 

@@ -282,7 +282,7 @@ export default function QueryResults({
                     return (
                       <td
                         key={colIdx}
-                        className={`relative cursor-default border-r border-neutral-500/10 ${
+                        className={`relative overflow-hidden cursor-default border-r border-neutral-500/10 ${
                           activeCell?.row === rowIdx ? "bg-primary/30" : ""
                         }`}
                         onClick={() =>
@@ -318,18 +318,15 @@ export default function QueryResults({
                               : value}
                           </div>
 
-                          <div
-                            className="absolute top-0 right-0 z-10 h-full flex items-center gap-1.5
+                          <div className="absolute top-0 right-0 z-10 h-full flex items-center gap-1.5
                             pr-2 pl-6 bg-gradient-to-l from-base-100 to-transparent
-                            transition-opacity opacity-0 hover:opacity-100"
-                            // prevent action button clicks from marketing the cell as active
-                            onClick={(ev) => ev.stopPropagation()}
-                          >
+                            transition-opacity opacity-0 hover:opacity-100">
                             <button
                               type="button"
                               title="Add to filters"
                               className="h-4 w-4 flex items-center justify-center bg-primary-content text-primary rounded-full cursor-pointer"
-                              onClick={() => {
+                              onClick={(ev) => {
+                                ev.stopPropagation();
                                 const newFilters = [
                                   ...filters,
                                   value === null
@@ -373,7 +370,10 @@ export default function QueryResults({
                                 type="button"
                                 title="Copy to clipboard"
                                 className="h-4 w-4 flex items-center justify-center bg-primary-content text-primary rounded-full cursor-pointer"
-                                onClick={() => copyToClipboard(value)}
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                  copyToClipboard(value);
+                                }}
                               >
                                 <CopyIcon className="h-3 w-3" />
                               </button>
@@ -384,7 +384,10 @@ export default function QueryResults({
                                 type="button"
                                 title="Query foreign key value"
                                 className="h-4 w-4 flex items-center justify-center bg-primary-content text-primary rounded-full cursor-pointer"
-                                onClick={() => onForeignKeyClick(column, value)}
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                  onForeignKeyClick(column, value);
+                                }}
                               >
                                 <ForeignKeyIcon className="h-3 w-3" />
                               </button>
