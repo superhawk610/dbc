@@ -1333,12 +1333,16 @@ fn from_json(
             .map(|b| Box::new(b) as _),
         Type::INT8 | Type::INT4 | Type::INT2 => json
             .as_i64()
-            .ok_or(eyre::eyre!("expected i64"))
+            .ok_or(eyre::eyre!("expected integer"))
             .map(|i| Box::new(i) as _),
-        Type::FLOAT8 | Type::FLOAT4 | Type::NUMERIC => json
+        Type::FLOAT8 | Type::FLOAT4 => json
             .as_f64()
-            .ok_or(eyre::eyre!("expected f64"))
-            .map(|i| Box::new(i) as _),
+            .ok_or(eyre::eyre!("expected float"))
+            .map(|f| Box::new(f) as _),
+        Type::NUMERIC => json
+            .as_f64()
+            .ok_or(eyre::eyre!("expected float"))
+            .map(|f| Box::new(Decimal::from_f64_retain(f).unwrap()) as _),
         Type::TIMESTAMP => {
             let s = json.as_str().ok_or(eyre::eyre!("expected string"))?;
             let date_time =
