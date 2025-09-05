@@ -217,7 +217,7 @@ export default function QueryResults({
       >
         <table className="table table-sm table-zebra table-pin-rows table-compact rounded-none bg-base-100 whitespace-nowrap">
           <thead>
-            <tr>
+            <tr className="z-20">
               {page.entries.columns.map((column, idx) => (
                 <th
                   key={`${column.name}-${idx}`}
