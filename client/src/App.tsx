@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   HiDocumentAdd as NewTabIcon,
   HiOutlineDatabase as DatabaseIcon,
+  HiOutlineServer as LeftPanelIcon,
   HiViewList as ListIcon,
 } from "react-icons/hi";
 import {
@@ -67,6 +68,7 @@ function App() {
   const resizeRef = useRef<HTMLDivElement>(null);
   const resizeHandleRef = useRef<HTMLDivElement>(null);
   const [showResults, setShowResults] = useState(false);
+  const [showLeftPanel, setShowLeftPanel] = useState(true);
   const [settingsModalActive, setSettingsModalsActive] = useState(false);
   const [paramModalActive, setParamModalActive] = useState(false);
   const [queryParams, setQueryParams] = useState<QueryParam[]>([]);
@@ -456,6 +458,7 @@ function App() {
           schema={schema}
           onClick={() => submitQuery()}
           onClickLabel="Query ⌘⏎"
+          hideSidebar={!showLeftPanel}
           sidebar={
             <div className="w-[300px] flex flex-col">
               <SearchableList
@@ -636,6 +639,17 @@ function App() {
         data-wry-drag-region
         className="h-[42px] flex items-center gap-2 px-4 py-2 text-sm"
       >
+        <button
+          type="button"
+          title="Toggle table view"
+          className={`btn btn-ghost btn-xs rounded-sm ${
+            showLeftPanel ? "" : "opacity-50"
+          }`}
+          onClick={() => setShowLeftPanel((x) => !x)}
+        >
+          <LeftPanelIcon className="w-4 h-4" />
+        </button>
+
         {showResults && res && res.type === "select" && res.total_count > 0 && (
           <div className="flex-1">
             <Pagination

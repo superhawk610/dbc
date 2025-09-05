@@ -237,6 +237,7 @@ function activeQuery(
 export interface Props {
   onClick?: () => void;
   onClickLabel?: string;
+  hideSidebar?: boolean;
   sidebar?: React.ReactNode;
   toolbar?: React.ReactNode;
   connection: string | null | undefined;
@@ -270,8 +271,16 @@ interface TabState {
 
 export default forwardRef(
   function Editor(
-    { onClick, onClickLabel, sidebar, toolbar, connection, database, schema }:
-      Props,
+    {
+      onClick,
+      onClickLabel,
+      hideSidebar,
+      sidebar,
+      toolbar,
+      connection,
+      database,
+      schema,
+    }: Props,
     ref,
   ) {
     const tabIndexRef = useRef(0);
@@ -503,7 +512,7 @@ export default forwardRef(
     return (
       <>
         <div className="flex-1 flex flex-row">
-          {sidebar}
+          {!hideSidebar && sidebar}
 
           <div className="flex-1 border-l-2 border-base-content/10">
             <div className="flex flex-col h-full">
