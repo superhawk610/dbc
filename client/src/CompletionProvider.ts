@@ -20,6 +20,29 @@ export interface DbcCompletionProviderContext {
 const unquote = (str: string) =>
   (str.startsWith('"') && str.endsWith('"')) ? str.slice(1, -1) : str;
 
+function skipWhitespace(contents: string, offset: number) {
+  for (let i = offset; i >= 0; i--) {
+    const char = contents[i];
+    if (char === " " || char === "\n") continue;
+    return i;
+  }
+
+  return 0;
+}
+
+// returns [token, offset]
+function previousToken(contents: string, offset: number): [string, number] {
+  const start = skipWhitespace(contents, offset);
+
+  let i = start;
+  for (; i >= 0; i--) {
+    const char = contents[i];
+    if (char === " " || char === "\n") break;
+  }
+
+  return [contents.slice(i + 1, start + 1), i];
+}
+
 export default class DbcCompletionProvider
   implements languages.CompletionItemProvider {
   readonly triggerCharacters = [" ", "."];
@@ -73,21 +96,9 @@ export default class DbcCompletionProvider
         const contents = model.getValue();
 
         // move backwards, skipping whitespace
-        let prevTokenStart = offset - 1;
-        for (; prevTokenStart >= 0; prevTokenStart--) {
-          const char = contents[prevTokenStart];
-          if (char === " " || char === "\n") continue;
-          break;
-        }
+        let [prevToken] = previousToken(contents, offset - 1);
+        prevToken = prevToken.toLowerCase();
 
-        // keep moving backwards until next whitespace is encountered
-        for (; prevTokenStart >= 0; prevTokenStart--) {
-          const char = contents[prevTokenStart];
-          if (char === " " || char === "\n") break;
-        }
-
-        const prevToken = contents.slice(prevTokenStart + 1, offset - 1)
-          .toLowerCase();
         if (prevToken === "from" || prevToken === "join") {
           const abort = new AbortController();
           token.onCancellationRequested(() => abort.abort());
@@ -124,6 +135,7 @@ export default class DbcCompletionProvider
             insertText: table.table_name,
             kind: languages.CompletionItemKind.Field,
             range: Range.fromPositions(position, position),
+            detail: `${this.context.schema}.${table.table_name}`,
           })));
 
           completion.suggestions.push(...schemas.map((schema) => ({
@@ -139,21 +151,88 @@ export default class DbcCompletionProvider
 
       // if prior token is a schema name, list tables in that schema
       case ".": {
-        const offset = model.getOffsetAt(position);
-        const contents = model.getValue();
-
-        // move backwards until whitespace is encountered
-        let prevTokenStart = offset - 1;
-        for (; prevTokenStart >= 0; prevTokenStart--) {
-          const char = contents[prevTokenStart];
-          if (char === " " || char === "\n") break;
-        }
-
-        const prevToken = contents.slice(prevTokenStart + 1, offset - 1);
-
         const abort = new AbortController();
         token.onCancellationRequested(() => abort.abort());
 
+        const offset = model.getOffsetAt(position);
+        const contents = model.getValue();
+        let [prevToken, prevTokenOffset] = previousToken(contents, offset - 1);
+        // remove trailing `.`
+        prevToken = prevToken.slice(0, prevToken.length - 1);
+
+        // if the token before the schema name is `on`, then we're completing a join condition,
+        // so we should list columns from the table; similarly, if the token before the schema
+        // name is `=`, then we're completing a condition in a `join` clause
+        //
+        // TODO: this is all pretty hacky, and we should really try to parse the current query
+        // AST and iterate over that instead, but that's a task for another day :)
+        // see: https://www.npmjs.com/package/pgsql-parser
+        const [maybeOnToken, maybeOnOffset] = previousToken(
+          contents,
+          prevTokenOffset,
+        );
+        if (
+          maybeOnToken.toLowerCase() === "on" ||
+          maybeOnToken.toLowerCase() === "="
+        ) {
+          let table = prevToken;
+
+          // resolve table aliases ---------------
+          const tableAlias = table;
+
+          // find start bound for current query
+          let prevSemiIndex = maybeOnOffset;
+          while (contents[prevSemiIndex] !== ";" && prevSemiIndex >= 0) {
+            prevSemiIndex -= 1;
+          }
+          const queryStartIndex = prevSemiIndex + 1;
+
+          // move backwards from previous token, checking for a table alias
+          // that matches that token; if we find one, assume the token is an
+          // alias and use the aliased value, and if not, assume the token
+          // is the table name itself
+          let prevTokenOffset = maybeOnOffset;
+          while (prevTokenOffset > queryStartIndex) {
+            let prevToken: string;
+            [prevToken, prevTokenOffset] = previousToken(
+              contents,
+              prevTokenOffset,
+            );
+            if (prevToken === tableAlias) {
+              [table] = previousToken(contents, prevTokenOffset);
+              break;
+            }
+          }
+          // --------------------------------------
+
+          const columns = await get<string[]>(
+            `/db/schemas/${this.context.schema}/tables/${
+              unquote(table)
+            }/columns`,
+            undefined,
+            {
+              signal: abort.signal,
+              cacheTimeoutSec: CACHE_TIMEOUT_SECS,
+              headers: {
+                "x-conn-name": this.context.connection,
+                "x-database": this.context.database,
+              },
+            },
+          );
+
+          completion.suggestions.push(...columns.map((column) => ({
+            label: column,
+            insertText: column,
+            sortText: column === "id" ? "0" : column,
+            kind: languages.CompletionItemKind.Property,
+            range: Range.fromPositions(position, position),
+            detail: `${table}.${column}`,
+          })));
+
+          break;
+        }
+
+        // otherwise, this might be a schema name, so list tables in that schema
         const tables = await get<Table[]>(
           `/db/schemas/${unquote(prevToken)}/tables`,
           undefined,
@@ -172,6 +251,7 @@ export default class DbcCompletionProvider
           insertText: table.table_name,
           kind: languages.CompletionItemKind.Field,
           range: Range.fromPositions(position, position),
+          detail: `${unquote(prevToken)}.${table.table_name}`,
         })));
 
         break;
