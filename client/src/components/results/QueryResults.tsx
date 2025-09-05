@@ -8,6 +8,7 @@ import {
   HiFilter as FilterIcon,
 } from "react-icons/hi";
 import {
+  columnLabel,
   Filter,
   PaginatedQueryResult,
   QueryColumn,
@@ -179,7 +180,10 @@ export default function QueryResults({
           switch (id) {
             case "filter":
               return onFilterChange([...filters, {
+                type: itemContext!.column.type,
+                index: itemContext!.idx,
                 column: itemContext!.column.name,
+                label: columnLabel(itemContext!.column),
                 operator: "eq",
                 value: "",
               }]);
@@ -330,12 +334,18 @@ export default function QueryResults({
                                   ...filters,
                                   value === null
                                     ? {
+                                      index: colIdx,
+                                      type: column.type,
                                       column: column.name,
+                                      label: columnLabel(column),
                                       operator: "null" as Filter["operator"],
                                       value: "",
                                     }
                                     : {
+                                      index: colIdx,
+                                      type: column.type,
                                       column: column.name,
+                                      label: columnLabel(column),
                                       operator: "eq" as Filter["operator"],
                                       value: value as string,
                                     },

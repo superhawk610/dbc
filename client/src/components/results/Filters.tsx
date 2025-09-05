@@ -1,5 +1,10 @@
 import { produce } from "immer";
-import { Filter, QueryColumn } from "../../models/query.ts";
+import {
+  columnLabel,
+  Filter,
+  FILTER_OPS,
+  QueryColumn,
+} from "../../models/query.ts";
 import { HiMinus as MinusIcon, HiPlus as PlusIcon } from "react-icons/hi";
 
 export interface Props {
@@ -14,26 +19,37 @@ export default function Filters(
 ) {
   if (filters.length === 0) return null;
 
+  // sort column names alphabetically
+  const sortedColumns = columns.map((col) => ({
+    ...col,
+    label: columnLabel(col),
+  })).toSorted((a, b) => a.label.localeCompare(b.label));
+
   return (
     <ul className="bg-base-100 p-1.5 pr-4 space-y-1">
       {filters.map((filter, idx) => (
         <li key={idx} className="flex justify-end gap-1">
           <select
             className="select select-xs bg-base-200 text-base-content px-2 py-1 rounded border-0 focus:outline-0"
-            value={filter.column ?? columns[0].name}
+            value={`${filter.index}.${filter.column}`}
             onChange={(e) =>
               onChange(produce(filters, (draft) => {
-                draft[idx].column = e.target.value;
+                const [index, column] = e.target.value.split(".");
+                draft[idx].column = column;
+                draft[idx].index = parseInt(index);
               }))}
           >
-            {columns.map((column) => (
-              <option key={column.name} value={column.name}>
-                {column.name}
+            {sortedColumns.map((col) => (
+              <option
+                key={`${col.index}.${col.name}`}
+                value={`${col.index}.${col.name}`}
+              >
+                {col.label}
               </option>
             ))}
           </select>
           <select
-            className="select select-xs bg-base-200 text-base-content px-2 py-1 rounded border-0 focus:outline-0"
+            className="w-[200px] select select-xs bg-base-200 text-base-content px-2 py-1 rounded border-0 focus:outline-0"
             value={filter.operator ?? "eq"}
             onChange={(e) =>
               onChange(produce(filters, (draft) => {
@@ -43,28 +59,45 @@ export default function Filters(
                 }
               }))}
           >
-            <option value="eq">equals</option>
-            <option value="neq">not equals</option>
-            <option value="null">is null</option>
-            <option value="not_null">is not null</option>
+            {FILTER_OPS.map((op) => (
+              <option key={op.op} value={op.op}>
+                {op.label}
+              </option>
+            ))}
           </select>
           <input
             type="text"
             disabled={["null", "not_null"].includes(filter.operator)}
-            value={filter.value}
+            value={String(filter.value)}
             className="w-[300px] bg-base-200 text-base-content text-xs px-2 py-1 rounded outline-0
             disabled:opacity-50 disabled:cursor-not-allowed"
             onChange={(e) =>
               onChange(produce(filters, (draft) => {
-                draft[idx].value = e.target.value;
+                switch (filter.type) {
+                  case "bool":
+                    draft[idx].value = ["true", "t", "1", "y", "yes"].includes(
+                      e.target.value.toLowerCase(),
+                    );
+                    break;
+                  case "int4":
+                  case "int8":
+                  case "numeric":
+                    draft[idx].value = Number(e.target.value);
+                    break;
+                  default:
+                    draft[idx].value = e.target.value;
+                }
               }))}
           />
           <button
             type="button"
-            className="btn btn-xs btn-ghost px-0 ml-1 text-base-content"
+            className="btn btn-xs btn-ghost px-0 rounded-sm ml-1 text-base-content"
             onClick={() =>
               onChange([...filters, {
-                column: columns[0].name,
+                type: sortedColumns[0].type,
+                column: sortedColumns[0].name,
+                index: sortedColumns[0].index,
+                label: columnLabel(sortedColumns[0]),
                 operator: "eq",
                 value: "",
               }])}
@@ -73,7 +106,7 @@ export default function Filters(
           </button>
           <button
             type="button"
-            className="btn btn-xs btn-ghost px-0 text-base-content"
+            className="btn btn-xs btn-ghost px-0 rounded-sm text-base-content"
             onClick={() => {
               onChange(filters.filter((_, i) =>
                 i !== idx

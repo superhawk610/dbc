@@ -184,35 +184,72 @@ pub async fn connect(config: &Config) -> eyre::Result<Connection> {
 pub enum FilterOp {
     Eq,
     Neq,
+    Like,
+    NotLike,
     Null,
     NotNull,
+    Gt,
+    Gte,
+    Lt,
+    Lte,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct Filter {
+    pub index: usize,
     pub column: String,
     pub operator: FilterOp,
-    pub value: String,
+    pub value: serde_json::Value,
 }
 
 impl Filter {
     pub fn where_clause(&self, param_idx: usize) -> (bool, String) {
-        if self.uses_param() {
-            (
+        match (self.uses_param(), &self.operator) {
+            (true, FilterOp::Like | FilterOp::NotLike) => (
                 true,
-                format!("{} {} ${}", self.column, self.sql_op(), param_idx + 1),
-            )
-        } else {
-            (false, format!("{} {}", self.column, self.sql_op()))
+                format!(
+                    "{} {} CONCAT('%', ${}::text, '%')",
+                    Self::col_name(self.index, &self.column),
+                    self.sql_op(),
+                    param_idx + 1
+                ),
+            ),
+            (true, _) => (
+                true,
+                format!(
+                    "{} {} ${}",
+                    Self::col_name(self.index, &self.column),
+                    self.sql_op(),
+                    param_idx + 1
+                ),
+            ),
+            (false, _) => (
+                false,
+                format!(
+                    "{} {}",
+                    Self::col_name(self.index, &self.column),
+                    self.sql_op()
+                ),
+            ),
         }
+    }
+
+    pub fn col_name(col_idx: usize, col_name: &str) -> String {
+        format!("\"{}.{}\"", col_idx, col_name)
     }
 
     fn sql_op(&self) -> &'static str {
         match self.operator {
             FilterOp::Eq => "=",
             FilterOp::Neq => "!=",
+            FilterOp::Like => "ILIKE",
+            FilterOp::NotLike => "NOT ILIKE",
             FilterOp::Null => "IS NULL",
             FilterOp::NotNull => "IS NOT NULL",
+            FilterOp::Gt => ">",
+            FilterOp::Gte => ">=",
+            FilterOp::Lt => "<",
+            FilterOp::Lte => "<=",
         }
     }
 
@@ -285,6 +322,7 @@ pub struct QueryResultColumn {
     pub column_id: Option<i16>,
 
     pub name: String,
+    pub index: usize,
     #[serde(rename = "type")]
     pub type_: String,
     #[serde(flatten)]
@@ -752,10 +790,33 @@ pub async fn paginated_query(
     sort: Option<Sort>,
 ) -> eyre::Result<PaginatedQueryResult> {
     let raw_query = parse_query(raw_query);
+    let inner_stmt = prepare(&client, &raw_query).await?;
+
+    let filter_prefix = format!(
+        "WITH q({}) AS (\n",
+        inner_stmt
+            .columns()
+            .iter()
+            .enumerate()
+            .map(|(i, c)| Filter::col_name(i, c.name()))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+
+    let select_aliases = inner_stmt
+        .columns()
+        .iter()
+        .enumerate()
+        .map(|(i, c)| format!("{} AS {}", Filter::col_name(i, c.name()), c.name()))
+        .collect::<Vec<_>>()
+        .join(", ");
 
     let filtered_query = format!(
-        "SELECT * FROM (\n{raw_query}\n) _ {}{}",
-        if filters.is_empty() { "" } else { "WHERE " },
+        "{}{}\n)\nSELECT {} FROM q{}{}",
+        filter_prefix,
+        raw_query,
+        select_aliases,
+        if filters.is_empty() { "" } else { "\nWHERE " },
         filters
             .iter()
             .scan(0, |i, f| {
@@ -773,10 +834,7 @@ pub async fn paginated_query(
 
     let filter_params = filters
         .iter()
-        .filter_map(|f| {
-            f.uses_param()
-                .then(|| serde_json::Value::String(f.value.clone()))
-        })
+        .filter_map(|f| f.uses_param().then(|| f.value.clone()))
         .collect::<Vec<_>>();
 
     let stmt = prepare(&client, &filtered_query).await?;
@@ -828,7 +886,7 @@ pub async fn paginated_query(
                 .await
                 .map_err(|err| match err.downcast::<PgError>() {
                     Ok(mut err) => {
-                        err.offset_position(-32);
+                        err.offset_position(-16 - (filter_prefix.len() as i32));
                         eyre::eyre!(err)
                     }
                     Err(err) => err,
@@ -839,7 +897,7 @@ pub async fn paginated_query(
                 .await
                 .map_err(|err| match err.downcast::<PgError>() {
                     Ok(mut err) => {
-                        err.offset_position(-39);
+                        err.offset_position(-23 - (filter_prefix.len() as i32));
                         eyre::eyre!(err)
                     }
                     Err(err) => err,
@@ -888,7 +946,9 @@ pub async fn prepare(client: &Client, raw_sql: &str) -> eyre::Result<PreparedSta
     let columns = stmt
         .columns()
         .iter()
-        .map(|col| QueryResultColumn {
+        .enumerate()
+        .map(|(idx, col)| QueryResultColumn {
+            index: idx,
             table_oid: col.table_oid(),
             column_id: col.column_id(),
             name: col.name().to_owned(),
@@ -1277,6 +1337,26 @@ fn from_json(
             .as_f64()
             .ok_or(eyre::eyre!("expected f64"))
             .map(|i| Box::new(i) as _),
+        Type::TIMESTAMP => {
+            let s = json.as_str().ok_or(eyre::eyre!("expected string"))?;
+            let date_time =
+                match s.len() {
+                    // parse as date, assume 00:00:00 for time
+                    10 => time::Date::parse(s, format_description!("[year]-[month]-[day]")).map(
+                        |d| time::PrimitiveDateTime::new(d, time::Time::from_hms(0, 0, 0).unwrap()),
+                    )?,
+                    // parse as datetime
+                    19 => time::PrimitiveDateTime::parse(
+                        s,
+                        format_description!("[year]-[month]-[day] [hour]:[minute]:[second]"),
+                    )?,
+                    _ => eyre::bail!(
+                        "invalid timestamp format, expected YYYY-MM-DD or YYYY-MM-DD HH:MM:SS"
+                    ),
+                };
+
+            Ok(Box::new(date_time) as _)
+        }
         _ => Err(eyre::eyre!("unsupported type: {:?}", type_)),
     }
 }
