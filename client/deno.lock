@@ -20,7 +20,8 @@
     "npm:tailwindcss@^4.1.2": "4.1.2",
     "npm:use-immer@0.11": "0.11.0_immer@10.1.1_react@19.1.0",
     "npm:vite@*": "6.2.5_@types+node@22.12.0",
-    "npm:vite@^6.1.1": "6.2.5_@types+node@22.12.0"
+    "npm:vite@^6.1.1": "6.2.5_@types+node@22.12.0",
+    "npm:web-tree-sitter@~0.25.8": "0.25.8"
   },
   "npm": {
     "@ampproject/remapping@2.3.0": {
@@ -1329,6 +1330,9 @@
       ],
       "bin": true
     },
+    "web-tree-sitter@0.25.8": {
+      "integrity": "sha512-AOWIoUifUcpwILOI38RtfIh0X1nlMRuqmw/sMgfQko1lbQJOJQf1Mqmtjw+GLW0ewvJyWFWTqGaWy5rPfS3XDw=="
+    },
     "which-boxed-primitive@1.1.1": {
       "integrity": "sha512-TbX3mj8n0odCBFVlY8AxkqcHASw3L60jIuF8jFP78az3C2YhmGvqbHBpAjTRH2/xqYunrJ9g1jSyjCjpoWzIAA==",
       "dependencies": [
@@ -1382,7 +1386,8 @@
       "npm:react@19",
       "npm:tailwindcss@^4.1.2",
       "npm:use-immer@0.11",
-      "npm:vite@^6.1.1"
+      "npm:vite@^6.1.1",
+      "npm:web-tree-sitter@~0.25.8"
     ]
   }
 }

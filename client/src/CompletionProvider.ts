@@ -5,9 +5,11 @@ import {
   Position,
   Range,
 } from "monaco-editor";
+import { Language, Parser, Query, QueryCapture } from "web-tree-sitter";
 import { get } from "./api.ts";
 import Table from "./models/table.ts";
 import Schema from "./models/schema.ts";
+import { activeQuery } from "./components/editor/utils.ts";
 
 const CACHE_TIMEOUT_SECS = 5 * 60;
 
@@ -46,8 +48,17 @@ function previousToken(contents: string, offset: number): [string, number] {
 export default class DbcCompletionProvider
   implements languages.CompletionItemProvider {
   readonly triggerCharacters = [" ", "."];
+  private parser!: Parser;
 
-  constructor(private context: DbcCompletionProviderContext) {}
+  constructor(private context: DbcCompletionProviderContext) {
+    (async () => {
+      await Parser.init({ locateFile: (path: string) => "/" + path });
+      const sql = await Language.load("/tree-sitter-sql.wasm");
+      const parser = new Parser();
+      parser.setLanguage(sql);
+      this.parser = parser;
+    })();
+  }
 
   async provideCompletionItems(
     model: editor.ITextModel,
@@ -63,27 +74,29 @@ export default class DbcCompletionProvider
     if (
       context.triggerKind !== languages.CompletionTriggerKind.TriggerCharacter
     ) {
-      switch (context.triggerKind) {
-        // Invoke seems to occur on each keystroke while the completion dropdown
-        // is already visible; this could be used to filter the list of available
-        // items to match the text typed thus far?
-        //
-        // Well, that's no it, because completion items seem to be filtered
-        // automatically. Thus far, seems totally OK to ignore `Invoke` (maybe
-        // the intention is to remove items that are no longer relevant..?).
-        case languages.CompletionTriggerKind.Invoke:
-          console.debug("skipping Invoke");
-          break;
-        case languages.CompletionTriggerKind.TriggerForIncompleteCompletions:
-          console.debug("skipping TriggerForIncompleteCompletions");
-          break;
-      }
+      // switch (context.triggerKind) {
+      //   // Invoke seems to occur on each keystroke while the completion dropdown
+      //   // is already visible; this could be used to filter the list of available
+      //   // items to match the text typed thus far?
+      //   //
+      //   // Well, that's no it, because completion items seem to be filtered
+      //   // automatically. Thus far, seems totally OK to ignore `Invoke` (maybe
+      //   // the intention is to remove items that are no longer relevant..?).
+      //   case languages.CompletionTriggerKind.Invoke:
+      //     console.debug("skipping Invoke");
+      //     break;
+      //   case languages.CompletionTriggerKind.TriggerForIncompleteCompletions:
+      //     console.debug("skipping TriggerForIncompleteCompletions");
+      //     break;
+      // }
 
       return completion;
     }
 
     // an active connection/schema are required to provide suggestions
+    // it's also possible, though unlikely, that the parser hasn't initialized
     if (
+      !this.parser ||
       !this.context.connection ||
       !this.context.database ||
       !this.context.schema
@@ -151,6 +164,47 @@ export default class DbcCompletionProvider
 
       // if prior token is a schema name, list tables in that schema
       case ".": {
+        // let ast: Statement;
+        const query = activeQuery(model, position)?.query ?? model.getValue();
+        try {
+          const tree = this.parser.parse(query)!;
+          console.log(tree.rootNode.toString());
+          console.log(this.parser.language);
+          const treeQuery = new Query(
+            this.parser.language!,
+            `(
+              relation (
+                object_reference
+                name: (identifier) @table
+              )
+              alias: (identifier) @alias
+            )`,
+          );
+          console.log(treeQuery);
+          const matches = treeQuery.matches(tree.rootNode);
+          console.log(matches);
+          for (const match of matches) {
+            const captures: Record<string, QueryCapture> = {};
+            for (const capture of match.captures) {
+              captures[capture.name] = capture;
+            }
+
+            console.log(captures["table"].node.text);
+            console.log(captures["alias"].node.text);
+          }
+          // if (statements.length > 1) {
+          //   // this likely indicates an issue with `activeQuery` including
+          //   // more than one statement
+          //   console.warn("parsed more than one statement");
+          // }
+          // ast = statements[0];
+        } catch (err) {
+          console.log(err);
+          return completion;
+        }
+
+        // console.log(ast);
+
         const abort = new AbortController();
         token.onCancellationRequested(() => abort.abort());
 

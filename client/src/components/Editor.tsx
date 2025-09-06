@@ -8,19 +8,14 @@ import React, {
 import { useImmer } from "use-immer";
 import type { Draft } from "immer";
 import { Editor as MonacoEditor, loader, Monaco } from "@monaco-editor/react";
-import {
-  editor as editorNS,
-  MarkerSeverity,
-  Position,
-  Range,
-  Uri,
-} from "monaco-editor";
+import { editor as editorNS, MarkerSeverity, Range, Uri } from "monaco-editor";
 import {
   HiDatabase as DatabaseIcon,
   HiDocumentText as TabIcon,
   HiOutlineCube as CubeIcon,
   HiX as XIcon,
 } from "react-icons/hi";
+import { activeQuery, activeQueryRange } from "./editor/utils.ts";
 import DbcCompletionProvider, {
   DbcCompletionProviderContext,
 } from "../CompletionProvider.ts";
@@ -133,107 +128,6 @@ function patchTheme(theme: editorNS.IStandaloneThemeData) {
   }
 }
 
-function excludeComments(line: string) {
-  const blockCommentStartIdx = line.indexOf("/*");
-  if (blockCommentStartIdx > -1) line = line.slice(0, blockCommentStartIdx);
-
-  const lineCommentStartIdx = line.indexOf("--");
-  if (lineCommentStartIdx > -1) line = line.slice(0, blockCommentStartIdx);
-
-  return line;
-}
-
-function activeQueryRange(
-  editor: editorNS.IStandaloneCodeEditor,
-  position: Position,
-): Range | null {
-  const text = editor.getValue();
-  const lines = text.split("\n");
-
-  const cursorLineIdx = position.lineNumber - 1;
-  let startLineIdx = cursorLineIdx;
-  let endLineIdx = cursorLineIdx;
-  const excludedLines = new Set();
-
-  // first, scan for comments and exclude any blank lines,
-  // lines entirely contained within a block comment, and
-  // lines that only contain a line comment
-  let inComment = false;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-
-    // skip line comments and empty lines
-    if (line === "" || line.startsWith("--")) {
-      excludedLines.add(i);
-      continue;
-    }
-
-    // exclude block comment start/end lines
-    if (line.startsWith("/*") || line.startsWith("*/")) {
-      excludedLines.add(i);
-    }
-
-    if (inComment && lines[i].includes("*/")) inComment = false;
-    if (inComment) excludedLines.add(i);
-    if (lines[i].includes("/*")) inComment = true;
-  }
-
-  // if we're on an excluded line, don't highlight anything
-  if (excludedLines.has(cursorLineIdx)) {
-    return null;
-  }
-
-  // move backwards to find start line
-  let prevLineIdx = cursorLineIdx;
-  for (let i = cursorLineIdx; i >= 0; i--) {
-    if (excludedLines.has(i)) continue;
-
-    if (i !== cursorLineIdx && excludeComments(lines[i]).includes(";")) {
-      startLineIdx = prevLineIdx;
-      break;
-    }
-
-    startLineIdx = i;
-    prevLineIdx = i;
-  }
-
-  // move forwards to find end line
-  for (let i = cursorLineIdx; i < lines.length; i++) {
-    if (excludedLines.has(i)) continue;
-
-    if (excludeComments(lines[i]).includes(";")) {
-      endLineIdx = i;
-      break;
-    }
-  }
-
-  return new Range(startLineIdx! + 1, 1, endLineIdx! + 1, 1);
-}
-
-function textInLineRange(
-  editor: editorNS.IStandaloneCodeEditor,
-  range: Range,
-): string {
-  const text = editor.getValue();
-  const lines = text.split("\n");
-  return lines.slice(range.startLineNumber - 1, range.endLineNumber).join("\n");
-}
-
-function activeQuery(
-  editor: editorNS.IStandaloneCodeEditor,
-): { query: string; offset: number } | null {
-  const position = editor.getPosition();
-  const range = position ? activeQueryRange(editor, position) : null;
-  return range
-    ? {
-      query: textInLineRange(editor, range),
-      offset: editor.getModel()!.getOffsetAt(
-        new Position(range.startLineNumber, range.startColumn),
-      ),
-    }
-    : null;
-}
-
 export interface Props {
   onClick?: () => void;
   onClickLabel?: string;
@@ -324,7 +218,11 @@ export default forwardRef(
 
     useImperativeHandle(ref, () => ({
       getContents: () => monacoRef.current.editor.getValue(),
-      getActiveQuery: () => activeQuery(monacoRef.current.editor),
+      getActiveQuery: () =>
+        activeQuery(
+          monacoRef.current!.editor.getModel()!,
+          monacoRef.current!.editor.getPosition()!,
+        ),
       focus: () => monacoRef.current.editor.focus(),
       insert: (text: string) =>
         monacoRef.current.editor.trigger("keyboard", "type", { text }),
@@ -457,7 +355,7 @@ export default forwardRef(
       // attach cursor position listener
       editor.onDidChangeCursorPosition(({ position }) => {
         const model = editor.getModel()!;
-        const range = activeQueryRange(editor, position);
+        const range = activeQueryRange(editor.getValue(), position);
 
         monacoRef.current.decorations = model.deltaDecorations(
           monacoRef.current.decorations,
