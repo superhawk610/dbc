@@ -64,11 +64,10 @@ export function activeQueryRange(
   }
 
   // move forwards to find end line
-  for (let i = cursorLineIdx; i < lines.length; i++) {
-    if (excludedLines.has(i)) continue;
+  for (; endLineIdx < lines.length; endLineIdx++) {
+    if (excludedLines.has(endLineIdx)) continue;
 
-    if (excludeComments(lines[i]).includes(";")) {
-      endLineIdx = i;
+    if (excludeComments(lines[endLineIdx]).includes(";")) {
       break;
     }
   }

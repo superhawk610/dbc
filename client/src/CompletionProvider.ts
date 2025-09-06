@@ -164,12 +164,16 @@ export default class DbcCompletionProvider
 
       // if prior token is a schema name, list tables in that schema
       case ".": {
-        // let ast: Statement;
-        const query = activeQuery(model, position)?.query ?? model.getValue();
+        let query = activeQuery(model, position)?.query ?? model.getValue();
+
+        // remove just-typed `.` to improve query compilation
+        const o = model.getOffsetAt(position);
+        query = query.slice(0, o - 1) + query.slice(o);
+
+        const aliases: Record<string, string> = {};
+        const tableNames: Set<string> = new Set();
         try {
           const tree = this.parser.parse(query)!;
-          console.log(tree.rootNode.toString());
-          console.log(this.parser.language);
           const treeQuery = new Query(
             this.parser.language!,
             `(
@@ -177,89 +181,39 @@ export default class DbcCompletionProvider
                 object_reference
                 name: (identifier) @table
               )
-              alias: (identifier) @alias
+              alias: (identifier) @alias ?
             )`,
           );
-          console.log(treeQuery);
           const matches = treeQuery.matches(tree.rootNode);
-          console.log(matches);
           for (const match of matches) {
             const captures: Record<string, QueryCapture> = {};
             for (const capture of match.captures) {
               captures[capture.name] = capture;
             }
 
-            console.log(captures["table"].node.text);
-            console.log(captures["alias"].node.text);
+            if (captures["alias"]) {
+              aliases[captures["alias"].node.text] =
+                captures["table"].node.text;
+            }
+            tableNames.add(captures["table"].node.text);
           }
-          // if (statements.length > 1) {
-          //   // this likely indicates an issue with `activeQuery` including
-          //   // more than one statement
-          //   console.warn("parsed more than one statement");
-          // }
-          // ast = statements[0];
-        } catch (err) {
-          console.log(err);
+        } catch {
           return completion;
         }
-
-        // console.log(ast);
 
         const abort = new AbortController();
         token.onCancellationRequested(() => abort.abort());
 
         const offset = model.getOffsetAt(position);
         const contents = model.getValue();
-        let [prevToken, prevTokenOffset] = previousToken(contents, offset - 1);
+        let [prevToken] = previousToken(contents, offset - 1);
         // remove trailing `.`
         prevToken = prevToken.slice(0, prevToken.length - 1);
 
-        // TODO: auto-complete for `SELECT` fields, if using the `alias.field` syntax
-
-        // if the token before the schema name is `on`, then we're completing a join condition,
-        // so we should list columns from the table; similarly, if the token before the schema
-        // name is `=`, then we're completing a condition in a `join` clause
-        //
-        // TODO: this is all pretty hacky, and we should really try to parse the current query
-        // AST and iterate over that instead, but that's a task for another day :)
-        // see: https://www.npmjs.com/package/pgsql-parser
-        const [maybeOnToken, maybeOnOffset] = previousToken(
-          contents,
-          prevTokenOffset,
-        );
-        if (
-          maybeOnToken.toLowerCase() === "on" ||
-          maybeOnToken.toLowerCase() === "="
-        ) {
-          let table = prevToken;
-
-          // resolve table aliases ---------------
-          const tableAlias = table;
-
-          // find start bound for current query
-          let prevSemiIndex = maybeOnOffset;
-          while (contents[prevSemiIndex] !== ";" && prevSemiIndex >= 0) {
-            prevSemiIndex -= 1;
-          }
-          const queryStartIndex = prevSemiIndex + 1;
-
-          // move backwards from previous token, checking for a table alias
-          // that matches that token; if we find one, assume the token is an
-          // alias and use the aliased value, and if not, assume the token
-          // is the table name itself
-          let prevTokenOffset = maybeOnOffset;
-          while (prevTokenOffset > queryStartIndex) {
-            let prevToken: string;
-            [prevToken, prevTokenOffset] = previousToken(
-              contents,
-              prevTokenOffset,
-            );
-            if (prevToken === tableAlias) {
-              [table] = previousToken(contents, prevTokenOffset);
-              break;
-            }
-          }
-          // --------------------------------------
+        // if the user is typing `{tableName}.` or `{tableAlias}.`,
+        // provide column names from that table for completion
+        if (aliases[prevToken] || tableNames.has(prevToken)) {
+          const table = aliases[prevToken] || prevToken;
 
           const columns = await get<string[]>(
             `/db/schemas/${this.context.schema}/tables/${
@@ -314,7 +268,6 @@ export default class DbcCompletionProvider
       }
 
       default:
-        console.log(context);
         throw new Error("unreachable");
     }
 

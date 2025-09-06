@@ -40,9 +40,9 @@ non-bundled mode, and with minimal tweaks when bundled.
 ## Roadmap
 
 - [x] Improved modal for parameter input
-- [ ] Improve autocomplete for join field names
-- [ ] Improve autocomplete by operating on query AST
-- [ ] Support non-string data types for filtering
+- [x] Improve autocomplete for join field names
+- [x] Improve autocomplete by operating on query AST
+- [-] Support non-string data types for filtering
 - [ ] Cache editor themes during build to improve launch times
 - [ ] Improve script-based password loading (real-time output, timeouts)
 - [ ] Editor format command
