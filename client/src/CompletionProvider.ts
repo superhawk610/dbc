@@ -5,7 +5,7 @@ import {
   Position,
   Range,
 } from "monaco-editor";
-import { Language, Parser, Query, QueryCapture } from "web-tree-sitter";
+import { Language, Parser, Query, Tree } from "web-tree-sitter";
 import { get } from "./api.ts";
 import Table from "./models/table.ts";
 import Schema from "./models/schema.ts";
@@ -167,15 +167,28 @@ export default class DbcCompletionProvider
         let query = activeQuery(model, position)?.query ?? model.getValue();
 
         // remove just-typed `.` to improve query compilation
-        const o = model.getOffsetAt(position);
-        query = query.slice(0, o - 1) + query.slice(o);
+        const offset = model.getOffsetAt(position);
+        query = query.slice(0, offset - 1) + query.slice(offset);
 
+        const ctes: Set<string> = new Set();
         const aliases: Record<string, string> = {};
         const tableNames: Set<string> = new Set();
         try {
           const tree = this.parser.parse(query)!;
-          const treeQuery = new Query(
-            this.parser.language!,
+
+          const cteMatches = this.treeQuery(
+            tree,
+            `(
+              cte
+              (identifier) @name
+            )`,
+          );
+          for (const match of cteMatches) {
+            ctes.add(match["name"]);
+          }
+
+          const tableMatches = this.treeQuery(
+            tree,
             `(
               relation (
                 object_reference
@@ -184,18 +197,11 @@ export default class DbcCompletionProvider
               alias: (identifier) @alias ?
             )`,
           );
-          const matches = treeQuery.matches(tree.rootNode);
-          for (const match of matches) {
-            const captures: Record<string, QueryCapture> = {};
-            for (const capture of match.captures) {
-              captures[capture.name] = capture;
+          for (const match of tableMatches) {
+            tableNames.add(match["table"]);
+            if (match["alias"]) {
+              aliases[match["alias"]] = match["table"];
             }
-
-            if (captures["alias"]) {
-              aliases[captures["alias"].node.text] =
-                captures["table"].node.text;
-            }
-            tableNames.add(captures["table"].node.text);
           }
         } catch {
           return completion;
@@ -204,11 +210,17 @@ export default class DbcCompletionProvider
         const abort = new AbortController();
         token.onCancellationRequested(() => abort.abort());
 
-        const offset = model.getOffsetAt(position);
         const contents = model.getValue();
         let [prevToken] = previousToken(contents, offset - 1);
         // remove trailing `.`
         prevToken = prevToken.slice(0, prevToken.length - 1);
+
+        // if the user types `{cte}.`, we can't provide any completions
+        // since we don't know what fields the CTE can return
+        // TODO: try to parse `select` expression from CTE?
+        if (ctes.has(prevToken)) {
+          return completion;
+        }
 
         // if the user is typing `{tableName}.` or `{tableAlias}.`,
         // provide column names from that table for completion
@@ -272,6 +284,21 @@ export default class DbcCompletionProvider
     }
 
     return completion;
+  }
+
+  private treeQuery(tree: Tree, query: string) {
+    const output: Array<Record<string, string>> = [];
+    const matches = new Query(this.parser.language!, query).matches(
+      tree.rootNode,
+    );
+    for (const match of matches) {
+      const captures: Record<string, string> = {};
+      for (const capture of match.captures) {
+        captures[capture.name] = capture.node.text;
+      }
+      output.push(captures);
+    }
+    return output;
   }
 
   // use this to perform any additional processing for a completion item
