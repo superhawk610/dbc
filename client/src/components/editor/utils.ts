@@ -28,8 +28,8 @@ export function activeQueryRange(
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
 
-    // skip line comments and empty lines
-    if (line === "" || line.startsWith("--")) {
+    // skip line comments
+    if (line.startsWith("--")) {
       excludedLines.add(i);
       continue;
     }
@@ -45,7 +45,7 @@ export function activeQueryRange(
   }
 
   // if we're on an excluded line, don't highlight anything
-  if (excludedLines.has(cursorLineIdx)) {
+  if (excludedLines.has(cursorLineIdx) || lines[cursorLineIdx] === "") {
     return null;
   }
 
@@ -54,7 +54,10 @@ export function activeQueryRange(
   for (let i = cursorLineIdx; i >= 0; i--) {
     if (excludedLines.has(i)) continue;
 
-    if (i !== cursorLineIdx && excludeComments(lines[i]).includes(";")) {
+    if (
+      lines[i] === "" ||
+      i !== cursorLineIdx && excludeComments(lines[i]).includes(";")
+    ) {
       startLineIdx = prevLineIdx;
       break;
     }
@@ -68,6 +71,15 @@ export function activeQueryRange(
     if (excludedLines.has(endLineIdx)) continue;
 
     if (excludeComments(lines[endLineIdx]).includes(";")) {
+      break;
+    }
+
+    // once we hit an empty line, stop; this prevents the situation where
+    // we're editing a new query a couple lines above an existing query,
+    // and the two queries appear to be a single query until a semicolon
+    // is added
+    if (lines[endLineIdx] === "") {
+      endLineIdx -= 1;
       break;
     }
   }
