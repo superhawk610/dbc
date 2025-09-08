@@ -51,9 +51,15 @@ pub async fn websocket(ws: WebSocket, Path(_channel): Path<String>) -> impl Into
 }
 
 #[poem::handler]
-pub async fn get_config(Data(state): Data<&Arc<crate::State>>) -> Json<serde_json::Value> {
+pub async fn get_config(
+    Data(state): Data<&Arc<crate::State>>,
+) -> eyre::Result<Json<serde_json::Value>> {
     let config = state.config.read().await;
-    Json(serde_json::json!({ "connections": config.connections }))
+    let status = state.status().await?;
+    Ok(Json(serde_json::json!({
+        "connections": config.connections,
+        "status": status
+    })))
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -87,12 +93,22 @@ pub async fn update_config(
         {
             // if the connection is still present in the config, reload the pool
             Some(conn) => {
-                if let Some(stderr) = conn.load_password().await? {
-                    crate::stream::broadcast(stderr).await;
-                }
+                // fetch the password again
+                conn.load_password().await?;
 
-                if let Err(err) = pool.reload((&*conn).into()).await {
-                    crate::stream::broadcast(err.to_string()).await;
+                match pool {
+                    // if the connection was previously successful, reload it
+                    crate::PoolResult::Ok(pool) => {
+                        if let Err(err) = pool.reload((&*conn).into()).await {
+                            crate::stream::broadcast(err.to_string()).await;
+                        }
+                    }
+
+                    // if the connection failed previously, try to create it again
+                    // using the new configuration
+                    crate::PoolResult::Err(_) => {
+                        *pool = crate::create_pool(&conn).await?;
+                    }
                 }
             }
 

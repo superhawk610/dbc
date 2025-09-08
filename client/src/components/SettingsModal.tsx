@@ -103,7 +103,7 @@ function SettingsModalBody({ actions, onSave }: SettingsModalBodyProps) {
       return;
     }
 
-    const updatedConfig = { ...config, connections };
+    const updatedConfig = { ...config as Config, connections };
 
     // dispatch to server
     if (needsServerUpdate) {
@@ -121,6 +121,8 @@ function SettingsModalBody({ actions, onSave }: SettingsModalBodyProps) {
   }
 
   if (!config) return <span className="loading loading-infinity loading-xl" />;
+
+  const status = config!.status.find((s) => s.connection === connection?.name);
 
   return (
     <div className="flex w-full">
@@ -177,6 +179,31 @@ function SettingsModalBody({ actions, onSave }: SettingsModalBodyProps) {
         onSubmit={handleSubmit}
         onChange={() => setDirty(true)}
       >
+        <Fieldset heading="Status">
+          <div className="-mt-2">
+            {!status
+              ? (
+                <span className="badge badge-sm badge-neutral">
+                  Not connected
+                </span>
+              )
+              : status.connected
+              ? (
+                <>
+                  <span className="badge badge-sm badge-success">
+                    Connected
+                  </span>
+                  <code className="text-xs ml-2">{status.status}</code>
+                </>
+              )
+              : (
+                <>
+                  <span className="badge badge-sm badge-warning">Warning</span>
+                  <code className="text-xs ml-2">{status.status}</code>
+                </>
+              )}
+          </div>
+        </Fieldset>
         <Fieldset heading="Connection details">
           <Field name="name" defaultValue={connection?.name} />
           <div className="-mt-1 mb-8">

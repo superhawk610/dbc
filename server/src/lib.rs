@@ -17,8 +17,39 @@ pub struct ConnectionKey {
     database: String,
 }
 
+/// When attempting to create a connection pool, it's possible that it will fail.
+/// This enum represents the result of that attempt, where `Ok` means that the
+/// pool was successfully created, and `Err` means that it failed, likely due
+/// to failure to load the password from a script file or invalid connection
+/// parameters.
+pub enum PoolResult {
+    Ok(pool::ConnectionPool),
+    Err(String),
+}
+
+impl PoolResult {
+    pub fn inner_mut(&mut self) -> &mut pool::ConnectionPool {
+        match self {
+            PoolResult::Ok(pool) => pool,
+            PoolResult::Err(_) => panic!("not an Ok variant"),
+        }
+    }
+
+    /// Returns a tuple of `(is_connected, status_message)`.
+    pub async fn status(&mut self) -> eyre::Result<(bool, String)> {
+        match self {
+            PoolResult::Ok(pool) => {
+                let conn = pool.get_conn().await?;
+                let version_info = crate::db::version_info(&conn).await?;
+                Ok((true, version_info))
+            }
+            PoolResult::Err(err) => Ok((false, err.clone())),
+        }
+    }
+}
+
 pub struct State {
-    pub pools: Mutex<HashMap<ConnectionKey, pool::ConnectionPool>>,
+    pub pools: Mutex<HashMap<ConnectionKey, PoolResult>>,
     pub config: RwLock<persistence::Store>,
 }
 
@@ -55,8 +86,10 @@ impl State {
 
         // use an existing connection pool if one already exists
         let mut pools = self.pools.lock().await;
-        if let Some(pool) = pools.get_mut(&conn_key) {
-            return pool.get_conn().await;
+        match pools.get_mut(&conn_key) {
+            Some(PoolResult::Ok(pool)) => return pool.get_conn().await,
+            Some(PoolResult::Err(err)) => eyre::bail!(err.clone()),
+            None => {}
         }
 
         let msg = format!(
@@ -77,36 +110,42 @@ impl State {
         drop(config);
 
         // load password (run `password_file` if required)
-        if let Some(p) = connection.password_file() {
-            crate::stream::broadcast(format!("Fetching password via \"{}\":\n", p)).await;
+        if let Err(err) = connection.load_password().await {
+            let err = eyre::eyre!("Failed to load password: {}", err);
+            crate::stream::broadcast(err.to_string()).await;
+            pools.insert(conn_key, PoolResult::Err(err.to_string()));
+            return Err(err);
         }
-        let stderr = dbg!(connection.load_password().await)?;
-        if let Some(stderr) = stderr {
-            crate::stream::broadcast(stderr).await;
-        }
 
-        let cfg = crate::db::Config::from(&connection);
-        match crate::pool::ConnectionPool::new(cfg).await {
-            Ok(mut pool) => {
-                let pool_size = pool.pool_size().await;
-                tracing::info!("Success! {pool_size} connections in pool.");
-                crate::stream::broadcast(format!("Success! {pool_size} connections in pool."))
-                    .await;
-
-                let conn = pool.get_conn().await?;
-                let version_info = crate::db::version_info(&conn).await?;
-                crate::stream::broadcast(version_info).await;
-
-                let mut entry = pools.entry(conn_key).insert_entry(pool);
-                entry.get_mut().get_conn().await
+        match create_pool(&connection).await? {
+            res @ PoolResult::Ok(_) => {
+                let mut entry = pools.entry(conn_key).insert_entry(res);
+                entry.get_mut().inner_mut().get_conn().await
             }
 
-            Err(err) => {
-                tracing::error!("Error opening connection: {err}");
-                crate::stream::broadcast(format!("Failed to open connection\n{err}")).await;
-                Err(err)
+            PoolResult::Err(err) => {
+                let res = eyre::eyre!("Failed to open connection pool: {}", err);
+                pools.insert(conn_key, PoolResult::Err(err));
+                Err(res)
             }
         }
+    }
+
+    pub async fn status(&self) -> eyre::Result<Vec<serde_json::Value>> {
+        let mut pools = self.pools.lock().await;
+        let mut acc = Vec::new();
+
+        for (conn, pool) in pools.iter_mut() {
+            let (is_connected, status) = pool.status().await?;
+            acc.push(serde_json::json!({
+                "connection": conn.connection,
+                "database": conn.database,
+                "connected": is_connected,
+                "status": status,
+            }));
+        }
+
+        Ok(acc)
     }
 
     /// Print a debug representation of the application state. This has to
@@ -119,10 +158,36 @@ impl State {
                 "=== connection: \"{}\" on \"{}\" ===\n{}",
                 conn.database,
                 conn.connection,
-                pool.debug().await
+                match pool {
+                    PoolResult::Ok(pool) => pool.debug().await,
+                    PoolResult::Err(err) => err.clone(),
+                }
             ));
         }
         counts.join("\n")
+    }
+}
+
+pub(crate) async fn create_pool(conn: &crate::persistence::Connection) -> eyre::Result<PoolResult> {
+    let cfg = crate::db::Config::from(conn);
+    match crate::pool::ConnectionPool::new(cfg).await {
+        Ok(mut pool) => {
+            let pool_size = pool.pool_size().await;
+            tracing::info!("Success! {pool_size} connections in pool.");
+            crate::stream::broadcast(format!("Success! {pool_size} connections in pool.")).await;
+
+            let conn = pool.get_conn().await?;
+            let version_info = crate::db::version_info(&conn).await?;
+            crate::stream::broadcast(version_info).await;
+
+            Ok(PoolResult::Ok(pool))
+        }
+
+        Err(err) => {
+            tracing::error!("Error opening connection: {err}");
+            crate::stream::broadcast(format!("Failed to open connection\n{err}")).await;
+            Ok(PoolResult::Err(err.to_string()))
+        }
     }
 }
 

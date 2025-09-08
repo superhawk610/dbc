@@ -57,7 +57,7 @@ non-bundled mode, and with minimal tweaks when bundled.
 - [x] Improve autocomplete by operating on query AST
 - [-] Support non-string data types for filtering
 - [x] Cache editor themes during build to improve launch times
-- [ ] Improve script-based password loading (real-time output, timeouts)
+- [-] Improve script-based password loading (real-time output, timeouts)
 - [ ] Editor format command
 
 ## License

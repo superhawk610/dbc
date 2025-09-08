@@ -5,6 +5,7 @@ use aes_gcm::{
 use serde::{Deserialize, Serialize};
 use std::os::unix::process::ExitStatusExt;
 use std::sync::OnceLock;
+use tokio::io::AsyncReadExt;
 
 const STORE_FILE: &str = "store.toml";
 
@@ -65,46 +66,61 @@ impl Connection {
     /// # Panics
     ///
     /// Panics if neither `password` nor `password_file` is set.
-    pub async fn load_password(&mut self) -> eyre::Result<Option<String>> {
+    pub async fn load_password(&mut self) -> eyre::Result<()> {
         if let Some(bin) = self.password_file() {
+            crate::stream::broadcast(format!("Fetching password via \"{}\":", bin)).await;
+
             let bin = shellexpand::tilde(bin).to_string();
-            let output = tokio::process::Command::new(bin)
+            let mut cmd = tokio::process::Command::new(bin)
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
+                // if the command times out, kill it
+                .kill_on_drop(true)
                 .spawn()
-                .expect("valid executable file")
-                .wait_with_output()
-                .await
-                .expect("executed successfully");
+                .expect("valid executable file");
 
-            // FIXME: kill process if it takes too long
-            dbg!(&output);
+            let mut stdout = cmd.stdout.take().unwrap();
+            let mut stderr = cmd.stderr.take().unwrap();
 
-            if !output.status.success() {
-                let err = String::from_utf8(output.stderr)
-                    .or_else(|_| output.status.code().map(|c| format!("code {c}")).ok_or(()))
-                    .or_else(|_| {
-                        output
-                            .status
-                            .signal()
-                            .map(|s| format!("signal {s}"))
-                            .ok_or(())
-                    })
-                    .unwrap_or("unknown error".to_owned());
-                eyre::bail!(err);
+            let (stdout_tx, stdout_rx) = tokio::sync::oneshot::channel::<String>();
+
+            // collect stdout and send it once complete
+            tokio::spawn(async move {
+                let mut buf = String::new();
+                stdout.read_to_string(&mut buf).await.expect("valid utf-8");
+                let _ = stdout_tx.send(buf);
+            });
+
+            // collect stderr and broadcast line-by-line as its received
+            tokio::spawn(async move {
+                let mut buf = [0; 2048];
+                while let Ok(n) = stderr.read(&mut buf).await {
+                    let line = String::from_utf8_lossy(&buf[..n]);
+                    crate::stream::broadcast(line).await;
+                }
+            });
+
+            let timeout = std::time::Duration::from_secs(10);
+            let status = match tokio::time::timeout(timeout, cmd.wait()).await {
+                Err(_) => eyre::bail!("Timeout after {}s", timeout.as_secs()),
+                Ok(Err(err)) => eyre::bail!("Failed to execute:\n{err}"),
+                Ok(Ok(output)) => output,
+            };
+
+            let stdout = stdout_rx.await.unwrap();
+
+            if !status.success() {
+                eyre::bail!(
+                    "exited with {}",
+                    status
+                        .code()
+                        .map(|c| format!("code {c}\n"))
+                        .or(status.signal().map(|s| format!("signal {s}\n")))
+                        .expect("process should have exited with a code or signal")
+                );
             }
 
-            self.password = Some(
-                String::from_utf8(output.stdout)
-                    .expect("valid utf-8")
-                    .trim()
-                    .to_owned(),
-            );
-
-            dbg!(&self);
-
-            // FIXME: streaming real-time output
-            return Ok(String::from_utf8(output.stderr).ok());
+            self.password = Some(stdout.trim().to_owned());
         } else if self.password.is_none() {
             panic!(
                 "{}: either `password` or `password_file` must be set",
@@ -112,7 +128,7 @@ impl Connection {
             );
         }
 
-        Ok(None)
+        Ok(())
     }
 
     pub fn password_file(&self) -> Option<&String> {
