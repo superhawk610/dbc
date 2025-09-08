@@ -16,9 +16,9 @@ cp src/components/editor/themes/* public/editor/themes/custom
 
 echo "⚡️ Caching monaco-themes..."
 curl -Lo public/editor/themes/monaco-themes.json https://unpkg.com/monaco-themes/themes/themelist.json
-for theme in $(jq -r 'keys[]' public/editor/themes/monaco-themes.json); do
-  echo "Fetching themes/monaco-themes/${theme}.json..."
-  curl -LO --output-dir public/editor/themes/monaco-themes "https://unpkg.com/monaco-themes/themes/${theme}.json"
+jq -r 'to_entries[] | "\(.key) \(.value)"' public/editor/themes/monaco-themes.json | while read -r theme label; do
+  echo "Fetching \"$label\" to themes/monaco-themes/$theme.json..."
+  curl --progress-bar -Lo public/editor/themes/monaco-themes/$theme.json "https://unpkg.com/monaco-themes/themes/${label// /%20}.json"
 done
 
 echo "⚡️ Installing web-tree-sitter..."
