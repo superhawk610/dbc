@@ -8,6 +8,7 @@ import {
   HiFilter as FilterIcon,
 } from "react-icons/hi";
 import {
+  columnFilter,
   columnLabel,
   Filter,
   PaginatedQueryResult,
@@ -145,11 +146,14 @@ export default function QueryResults({
   if (page.type === "modify-data" || page.type === "modify-structure") {
     return (
       <div className="py-4 px-6 text-sm">
-        {page.type === "modify-data"
-          ? `Success! Updated ${page.affected_rows} row${
-            page.affected_rows === 1 ? "" : "s"
-          }.`
-          : "Success!"}
+        <span>Success!</span>
+        {page.type === "modify-data" &&
+          (
+            <span className="opacity-40 pl-1">
+              Updated {page.affected_rows}{" "}
+              row{page.affected_rows === 1 ? "" : "s"}.
+            </span>
+          )}
       </div>
     );
   }
@@ -167,11 +171,24 @@ export default function QueryResults({
                 { id: "sort-desc", label: "Sort descending" },
                 { id: "sort-none", label: "Disable sorting" },
               ];
-            case "cell":
-              return [
+            case "cell": {
+              const items = [
                 { id: "copy", label: "Copy" },
                 { id: "view", label: "Open in editor" },
+                { id: "filter-add", label: "Add to filters" },
               ];
+
+              if (
+                itemContext.column!.fk_constraint && itemContext.value !== null
+              ) {
+                items.push({
+                  id: "foreign-key",
+                  label: "Query foreign key value",
+                });
+              }
+
+              return items;
+            }
             default:
               throw new Error("unreachable");
           }
@@ -187,16 +204,35 @@ export default function QueryResults({
                 operator: "eq",
                 value: "",
               }]);
+
+            case "filter-add": {
+              const newFilters = [
+                ...filters,
+                columnFilter(itemContext!.column, itemContext!.value),
+              ];
+              onFilterChange(newFilters);
+              onFilterApply(newFilters);
+              return;
+            }
+
+            case "foreign-key":
+              return onForeignKeyClick(itemContext!.column, itemContext!.value);
+
             case "sort-asc":
               return onToggleSort(itemContext!.idx, "ASC");
+
             case "sort-desc":
               return onToggleSort(itemContext!.idx, "DESC");
+
             case "sort-none":
               return onToggleSort(itemContext!.idx, null);
+
             case "copy":
               return copyToClipboard(itemContext!.value);
+
             case "view":
               return onViewValueClick(itemContext!.value);
+
             default:
               throw new Error("unreachable");
           }
@@ -289,7 +325,7 @@ export default function QueryResults({
                           setActiveCell({ row: rowIdx, col: colIdx })}
                         onContextMenu={(ev) => {
                           setActiveCell({ row: rowIdx, col: colIdx });
-                          onContextMenu({ type: "cell", value })(ev);
+                          onContextMenu({ type: "cell", column, value })(ev);
                         }}
                       >
                         {activeCell?.row === rowIdx &&
@@ -329,23 +365,7 @@ export default function QueryResults({
                                 ev.stopPropagation();
                                 const newFilters = [
                                   ...filters,
-                                  value === null
-                                    ? {
-                                      index: colIdx,
-                                      type: column.type,
-                                      column: column.name,
-                                      label: columnLabel(column),
-                                      operator: "null" as Filter["operator"],
-                                      value: "",
-                                    }
-                                    : {
-                                      index: colIdx,
-                                      type: column.type,
-                                      column: column.name,
-                                      label: columnLabel(column),
-                                      operator: "eq" as Filter["operator"],
-                                      value: value as string,
-                                    },
+                                  columnFilter(column, value as string | null),
                                 ];
                                 onFilterChange(newFilters);
                                 onFilterApply(newFilters);

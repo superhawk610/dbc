@@ -390,6 +390,9 @@ function App() {
       // if the query was cancelled, do nothing
       if (abort.signal.aborted) return;
 
+      // reset the last query so that subsequent runs of the same query actually dispatch
+      queryRef.current = { filters: [] } as unknown as LastQuery;
+
       const err = _err as NetworkError;
 
       setError(err.message);

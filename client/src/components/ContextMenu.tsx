@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import useClickAway from "../hooks/useClickAway.ts";
 
 export interface ContextMenuHook {
@@ -59,11 +60,54 @@ export default function ContextMenu(
   const items = getItems(itemContext);
   if (items.length === 0) return null;
 
-  return (
+  const WIDTH = 256;
+  const HEIGHT = items.length * 24 + 20;
+  const BUFFER = 10;
+
+  // by default, show the context menu to the right; if the cursor is close
+  // to the right side of the screen, switch to the left instead; do the
+  // same thing with below (default) / above
+  const hPosition = x! >= globalThis.window.innerWidth - WIDTH - BUFFER
+    ? "left"
+    : "right";
+  const vPosition = y! >= globalThis.window.innerHeight - HEIGHT - BUFFER
+    ? "above"
+    : "below";
+
+  const style: { top?: string; left?: string } = {};
+
+  switch (hPosition) {
+    case "left":
+      style.left = `${x! - WIDTH - BUFFER}px`;
+      break;
+
+    case "right":
+      style.left = `${x! + BUFFER}px`;
+      break;
+
+    default:
+      throw new Error("unreachable");
+  }
+
+  switch (vPosition) {
+    case "above":
+      style.top = `${y! - HEIGHT + BUFFER}px`;
+      break;
+
+    case "below":
+      style.top = `${y! - BUFFER}px`;
+      break;
+
+    default:
+      throw new Error("unreachable");
+  }
+
+  const body = (
     <ul
       ref={ref}
-      className="fixed z-50 w-64 text-xs bg-base-100 text-base-content rounded-sm overflow-hidden shadow-lg cursor-pointer"
-      style={{ top: `${y! - 10}px`, left: `${x! + 10}px` }}
+      style={style}
+      className="fixed z-50 w-64 text-xs bg-base-100 text-base-content
+      py-2 rounded-sm overflow-hidden shadow-lg cursor-pointer"
     >
       {items.map((item) => (
         <li
@@ -79,4 +123,6 @@ export default function ContextMenu(
       ))}
     </ul>
   );
+
+  return createPortal(body, globalThis.document.body);
 }

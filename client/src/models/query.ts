@@ -52,6 +52,28 @@ export const columnLabel = (column: QueryColumn) => {
   return `${label} (${column.type})`;
 };
 
+export const columnFilter = (
+  column: QueryColumn,
+  value: string | null,
+): Filter =>
+  value === null
+    ? {
+      index: column.index,
+      type: column.type,
+      column: column.name,
+      label: columnLabel(column),
+      operator: "null" as Filter["operator"],
+      value: "",
+    }
+    : {
+      index: column.index,
+      type: column.type,
+      column: column.name,
+      label: columnLabel(column),
+      operator: "eq" as Filter["operator"],
+      value: value as string,
+    };
+
 export interface QueryResult {
   columns: QueryColumn[];
   rows: QueryValue[][];
