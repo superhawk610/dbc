@@ -1,5 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { HiOutlineCog as SettingsIcon } from "react-icons/hi";
+import {
+  HiOutlineCog as SettingsIcon,
+  HiRefresh as ReloadIcon,
+  HiX as CloseIcon,
+} from "react-icons/hi";
 import Modal, {
   closeModal,
   ModalActions,
@@ -40,19 +44,34 @@ function SettingsModalBody({ actions, onSave }: SettingsModalBodyProps) {
 
   useEffect(() => {
     (async () => {
-      const config = await get<Config>("/config");
-      setConfig(config);
+      const config = await fetchConfig();
 
       // select the first available connection by default
       if (config.connections.length > 0) setConnectionIndex(0);
     })();
   }, []);
 
+  async function fetchConfig() {
+    const config = await get<Config>("/config");
+    setConfig(config);
+    return config;
+  }
+
   function changeConnection(idx: number) {
     if (!dirty || confirm("Are you sure? Any unsaved changes will be lost.")) {
       setDirty(false);
       setConnectionIndex(idx);
     }
+  }
+
+  async function closeConnection(conn: string) {
+    await put(`/connections/${conn}/close`);
+    await fetchConfig();
+  }
+
+  async function reloadConnection(conn: string) {
+    await put(`/connections/${conn}/reload`);
+    await fetchConfig();
   }
 
   async function handleSubmit(ev: React.FormEvent) {
@@ -179,37 +198,57 @@ function SettingsModalBody({ actions, onSave }: SettingsModalBodyProps) {
         onSubmit={handleSubmit}
         onChange={() => setDirty(true)}
       >
-        <Fieldset heading="Status">
-          <div className="-mt-2 flex flex-col gap-2">
-            {!status
-              ? (
-                <span className="badge badge-xs badge-neutral">
-                  Not connected
-                </span>
-              )
-              : status.status === "pending"
-              ? (
-                <span className="badge badge-xs badge-neutral">
-                  Connecting...
-                </span>
-              )
-              : status.status === "active"
-              ? (
-                <>
-                  <span className="badge badge-xs badge-success">
-                    Connected
+        {connection && (
+          <Fieldset heading="Status">
+            <div className="-mt-2 flex flex-col gap-2">
+              {!status
+                ? (
+                  <span className="badge badge-xs badge-neutral">
+                    Not connected
                   </span>
-                  <code className="text-xs">{status.message}</code>
-                </>
-              )
-              : (
-                <>
-                  <div className="badge badge-xs badge-warning">Error</div>
-                  <code className="text-xs">{status.message}</code>
-                </>
-              )}
-          </div>
-        </Fieldset>
+                )
+                : status.status === "pending"
+                ? (
+                  <span className="badge badge-xs badge-neutral">
+                    Connecting...
+                  </span>
+                )
+                : status.status === "active"
+                ? (
+                  <>
+                    <span className="badge badge-xs badge-success">
+                      Connected
+                    </span>
+                    <code className="text-xs">{status.message}</code>
+                  </>
+                )
+                : (
+                  <>
+                    <div className="badge badge-xs badge-warning">Error</div>
+                    <code className="text-xs">{status.message}</code>
+                  </>
+                )}
+
+              <div className="flex gap-2 mt-2">
+                <button
+                  type="button"
+                  className="btn btn-xs btn-error"
+                  onClick={() => closeConnection(connection!.name)}
+                >
+                  <CloseIcon /> Close Connection
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-xs btn-warning"
+                  onClick={() => reloadConnection(connection!.name)}
+                >
+                  <ReloadIcon /> Reload Connection
+                </button>
+              </div>
+            </div>
+          </Fieldset>
+        )}
+
         <Fieldset heading="Connection details">
           <Field name="name" defaultValue={connection?.name} />
           <div className="-mt-1 mb-8">

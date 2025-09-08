@@ -85,6 +85,7 @@ pub async fn update_config(
 
     let mut pools = state.pools.lock().await;
     let mut close_pools = HashSet::new();
+    let mut reloaded_passwords = HashSet::new();
     for (conn, pool) in pools.iter_mut() {
         match config
             .connections
@@ -93,29 +94,7 @@ pub async fn update_config(
         {
             // if the connection is still present in the config, reload the pool
             Some(conn) => {
-                // fetch the password again
-                conn.load_password().await?;
-
-                match pool {
-                    // if the connection was previously successful, reload it
-                    crate::PoolState::Active(pool) => {
-                        if let Err(err) = pool.reload((&*conn).into()).await {
-                            crate::stream::broadcast(err.to_string()).await;
-                        }
-                    }
-
-                    // if the connection failed previously, try to create it again
-                    // using the new configuration
-                    crate::PoolState::Failed(_) => {
-                        *pool = crate::create_pool(&conn).await?;
-                    }
-
-                    // if the connection is pending, cancel it and create a new one
-                    crate::PoolState::Pending { cancel, .. } => {
-                        cancel.take().unwrap().send(()).unwrap();
-                        *pool = crate::create_pool(&conn).await?;
-                    }
-                }
+                reload_pool(conn, pool, &mut reloaded_passwords).await?;
             }
 
             // otherwise, slate for removal
@@ -141,6 +120,81 @@ pub async fn connection_info(
     let conn = state.get_default_conn(connection).await?;
     let info = crate::db::version_info(&conn).await?;
     Ok(Json(serde_json::json!({ "info": info })))
+}
+
+#[poem::handler]
+pub async fn close_connection(
+    Data(state): Data<&Arc<crate::State>>,
+    Path(connection): Path<String>,
+) -> eyre::Result<poem::http::StatusCode> {
+    crate::stream::broadcast(format!("Closing connection {}...", connection)).await;
+    let mut pools = state.pools.lock().await;
+    pools.retain(|k, _| k.connection != connection);
+    crate::stream::broadcast(format!("Connection closed successfully.")).await;
+    Ok(poem::http::StatusCode::NO_CONTENT)
+}
+
+#[poem::handler]
+pub async fn reload_connection(
+    Data(state): Data<&Arc<crate::State>>,
+    Path(connection): Path<String>,
+) -> eyre::Result<poem::http::StatusCode> {
+    crate::stream::broadcast(format!("Reloading connection {}...", connection)).await;
+
+    let config = state.config.read().await;
+    let mut connections = config.connections.clone();
+    drop(config);
+
+    let mut pools = state.pools.lock().await;
+    let mut reloaded_passwords = HashSet::new();
+    for (_, pool) in pools
+        .iter_mut()
+        .filter(|(conn_key, _)| conn_key.connection == connection)
+    {
+        let conn = connections
+            .iter_mut()
+            .find(|c| c.name.eq(&connection))
+            .unwrap();
+
+        reload_pool(conn, pool, &mut reloaded_passwords).await?;
+    }
+
+    Ok(poem::http::StatusCode::NO_CONTENT)
+}
+
+// TODO: do this without keeping the lock (use PoolState::Pending)
+async fn reload_pool(
+    conn: &mut crate::persistence::Connection,
+    pool: &mut crate::PoolState,
+    reloaded_passwords: &mut HashSet<String>,
+) -> eyre::Result<()> {
+    // only reload the password once for each unique connection
+    if !reloaded_passwords.contains(&conn.name) {
+        conn.load_password().await?;
+        reloaded_passwords.insert(conn.name.clone());
+    }
+
+    match pool {
+        // if the connection was previously successful, reload it
+        crate::PoolState::Active(pool) => match pool.reload((&*conn).into()).await {
+            Ok(_) => crate::stream::broadcast("Pool reloaded successfully.").await,
+            Err(err) => crate::stream::broadcast(err.to_string()).await,
+        },
+
+        // if the connection failed previously, try to create it again
+        // using the new configuration
+        crate::PoolState::Failed(_) => {
+            *pool = crate::create_pool(&conn).await?;
+        }
+
+        // if the connection is pending, cancel it and create a new one
+        crate::PoolState::Pending { cancel, .. } => {
+            cancel.take().unwrap().send(()).unwrap();
+            *pool = crate::create_pool(&conn).await?;
+        }
+    }
+
+    Ok(())
 }
 
 #[poem::handler]

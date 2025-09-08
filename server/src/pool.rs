@@ -117,6 +117,11 @@ impl ConnectionPool {
         let inner = Arc::clone(&self.inner);
         tokio::spawn(async move {
             loop {
+                if not_idle_rx.is_closed() {
+                    tracing::debug!("closing idle watcher");
+                    break;
+                }
+
                 if let Err(_) = tokio::time::timeout(idle_timeout, not_idle_rx.recv()).await {
                     tracing::info!("pool idle timeout reached, shutting down...");
                     crate::stream::broadcast("pool idle timeout reached, shutting down...").await;

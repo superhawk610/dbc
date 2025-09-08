@@ -1,4 +1,4 @@
-use poem::{EndpointExt, Route, Server, get, post};
+use poem::{EndpointExt, Route, Server, get, post, put};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{Mutex, RwLock};
 
@@ -67,7 +67,13 @@ async fn main() -> eyre::Result<()> {
     use dbc::server::routes;
     let router = Route::new()
         .at("/:channel", get(routes::websocket))
-        .at("/connections/:connection", get(routes::connection_info))
+        .nest(
+            "/connections",
+            Route::new()
+                .at("/:connection", get(routes::connection_info))
+                .at("/:connection/close", put(routes::close_connection))
+                .at("/:connection/reload", put(routes::reload_connection)),
+        )
         .nest(
             "/db",
             Route::new()
