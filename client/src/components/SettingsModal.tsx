@@ -180,26 +180,32 @@ function SettingsModalBody({ actions, onSave }: SettingsModalBodyProps) {
         onChange={() => setDirty(true)}
       >
         <Fieldset heading="Status">
-          <div className="-mt-2">
+          <div className="-mt-2 flex flex-col gap-2">
             {!status
               ? (
-                <span className="badge badge-sm badge-neutral">
+                <span className="badge badge-xs badge-neutral">
                   Not connected
                 </span>
               )
-              : status.connected
+              : status.status === "pending"
+              ? (
+                <span className="badge badge-xs badge-neutral">
+                  Connecting...
+                </span>
+              )
+              : status.status === "active"
               ? (
                 <>
-                  <span className="badge badge-sm badge-success">
+                  <span className="badge badge-xs badge-success">
                     Connected
                   </span>
-                  <code className="text-xs ml-2">{status.status}</code>
+                  <code className="text-xs">{status.message}</code>
                 </>
               )
               : (
                 <>
-                  <span className="badge badge-sm badge-warning">Warning</span>
-                  <code className="text-xs ml-2">{status.status}</code>
+                  <div className="badge badge-xs badge-warning">Error</div>
+                  <code className="text-xs">{status.message}</code>
                 </>
               )}
           </div>

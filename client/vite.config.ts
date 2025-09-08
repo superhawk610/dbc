@@ -6,4 +6,8 @@ import tailwindcss from "@tailwindcss/vite";
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [deno(), react(), tailwindcss()],
+  build: {
+    // since we're running locally, don't worry about chunk size
+    chunkSizeWarningLimit: 999_999,
+  },
 });

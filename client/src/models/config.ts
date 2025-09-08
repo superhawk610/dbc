@@ -3,8 +3,8 @@ import Connection from "./connection.ts";
 export interface ConnectionStatus {
   connection: string;
   database: string;
-  connected: boolean;
-  status: string;
+  status: "active" | "pending" | "failed";
+  message: string;
 }
 
 export default interface Config {

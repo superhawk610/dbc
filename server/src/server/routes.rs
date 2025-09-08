@@ -98,7 +98,7 @@ pub async fn update_config(
 
                 match pool {
                     // if the connection was previously successful, reload it
-                    crate::PoolResult::Ok(pool) => {
+                    crate::PoolState::Active(pool) => {
                         if let Err(err) = pool.reload((&*conn).into()).await {
                             crate::stream::broadcast(err.to_string()).await;
                         }
@@ -106,7 +106,13 @@ pub async fn update_config(
 
                     // if the connection failed previously, try to create it again
                     // using the new configuration
-                    crate::PoolResult::Err(_) => {
+                    crate::PoolState::Failed(_) => {
+                        *pool = crate::create_pool(&conn).await?;
+                    }
+
+                    // if the connection is pending, cancel it and create a new one
+                    crate::PoolState::Pending { cancel, .. } => {
+                        cancel.take().unwrap().send(()).unwrap();
                         *pool = crate::create_pool(&conn).await?;
                     }
                 }
