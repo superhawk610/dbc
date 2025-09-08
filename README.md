@@ -9,6 +9,19 @@ A barebones SQL database client, written in Rust / Deno.
 This application uses a Rust server for the backend and a Deno / Vite / React
 application for the frontend.
 
+### Setup
+
+Before running/building, make sure `curl` and `jq` are installed.
+
+The frontend client needs to build/cache some assets for the editor themes and tree-sitter.
+Use the included `build.sh` script to perform this setup:
+
+```sh
+$ cd client && ./build.sh
+```
+
+### Building
+
 To run in development, you can start the server and FE client like so:
 
 ```sh
@@ -43,7 +56,7 @@ non-bundled mode, and with minimal tweaks when bundled.
 - [x] Improve autocomplete for join field names
 - [x] Improve autocomplete by operating on query AST
 - [-] Support non-string data types for filtering
-- [ ] Cache editor themes during build to improve launch times
+- [x] Cache editor themes during build to improve launch times
 - [ ] Improve script-based password loading (real-time output, timeouts)
 - [ ] Editor format command
 

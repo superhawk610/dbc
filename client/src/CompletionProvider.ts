@@ -52,8 +52,8 @@ export default class DbcCompletionProvider
 
   constructor(private context: DbcCompletionProviderContext) {
     (async () => {
-      await Parser.init({ locateFile: (path: string) => "/" + path });
-      const sql = await Language.load("/tree-sitter-sql.wasm");
+      await Parser.init({ locateFile: (path: string) => "/editor/" + path });
+      const sql = await Language.load("/editor/tree-sitter-sql.wasm");
       const parser = new Parser();
       parser.setLanguage(sql);
       this.parser = parser;

@@ -20,30 +20,8 @@ import DbcCompletionProvider, {
   DbcCompletionProviderContext,
 } from "../CompletionProvider.ts";
 
-import themeCatppuccinLatte from "../themes/catppuccin-latte.json" with {
-  type: "json",
-};
-import themeCatppuccinFrappe from "../themes/catppuccin-frappe.json" with {
-  type: "json",
-};
-import themeCatppuccinMacchiato from "../themes/catppuccin-macchiato.json" with {
-  type: "json",
-};
-import themeCatppuccinMocha from "../themes/catppuccin-mocha.json" with {
-  type: "json",
-};
-
 const OWNER = "dbc";
 export const SAVED_TABS = "savedTabs";
-
-// FIXME: cache this during build or something
-// unkpg seems to throttle when it sees too many requests or something, because
-// bundled builds take ~13 seconds to load and it's just blocked on this call
-// const THEME_LIST_JSON = "https://unpkg.com/monaco-themes/themes/themelist.json";
-import themeListJson from "../themes/monaco-themes/themelist.json" with {
-  type: "json",
-};
-const THEME_LIST_JSON = themeListJson;
 
 const DEFAULT_THEMES = {
   "vs-dark": "Default (Dark)",
@@ -57,14 +35,6 @@ const CUSTOM_THEMES = {
   "catppuccin-frappe": "Catppuccin (Frappe)",
   "catppuccin-macchiato": "Catppuccin (Macchiato)",
   "catppuccin-mocha": "Catppuccin (Mocha)",
-};
-
-const CUSTOM_THEMES_JSON: Record<string, editorNS.IStandaloneThemeData> = {
-  "catppuccin-latte": themeCatppuccinLatte as editorNS.IStandaloneThemeData,
-  "catppuccin-frappe": themeCatppuccinFrappe as editorNS.IStandaloneThemeData,
-  "catppuccin-macchiato":
-    themeCatppuccinMacchiato as editorNS.IStandaloneThemeData,
-  "catppuccin-mocha": themeCatppuccinMocha as editorNS.IStandaloneThemeData,
 };
 
 const DEFAULT_TAB: EditorTab = {
@@ -93,9 +63,7 @@ interface MonacoRef {
   callbacks: Record<string, () => void>;
 }
 
-// TODO: look into using https://github.com/DTStack/monaco-sql-languages
-// for improved syntax highlighting and semantic parsing
-async function fetchTheme(theme: string, filename: string, ref: MonacoRef) {
+async function fetchTheme(theme: string, ref: MonacoRef) {
   // if we've already loaded the theme, don't do anything
   if (ref.definedThemes[theme]) return;
 
@@ -103,7 +71,8 @@ async function fetchTheme(theme: string, filename: string, ref: MonacoRef) {
   if (theme in DEFAULT_THEMES) return;
 
   if (theme in CUSTOM_THEMES) {
-    const themeJson = CUSTOM_THEMES_JSON[theme];
+    const themeRes = await fetch(`/editor/themes/custom/${theme}.json`);
+    const themeJson = await themeRes.json();
 
     patchTheme(themeJson);
     ref.monaco.editor.defineTheme(theme, themeJson);
@@ -111,8 +80,7 @@ async function fetchTheme(theme: string, filename: string, ref: MonacoRef) {
     return;
   }
 
-  const url = `https://unpkg.com/monaco-themes/themes/${filename}.json`;
-  const res = await fetch(url);
+  const res = await fetch(`/editor/themes/monaco-themes/${theme}.json`);
   const themeJson = await res.json();
 
   patchTheme(themeJson);
@@ -305,9 +273,8 @@ export default forwardRef(
 
         monacoRef.current.monaco = await loader.init();
 
-        // const res = await fetch(THEME_LIST_JSON);
-        // const data = await res.json();
-        const data = THEME_LIST_JSON;
+        const res = await fetch(`/editor/themes/monaco-themes.json`);
+        const data = await res.json();
 
         const themes: Record<string, string | null> = {
           ...DEFAULT_THEMES,
@@ -319,7 +286,7 @@ export default forwardRef(
         setThemes(themes);
 
         // fetch the active theme, in case it's not already cached
-        await fetchTheme(activeTheme, themes[activeTheme]!, monacoRef.current);
+        await fetchTheme(activeTheme, monacoRef.current);
 
         // register completion provider
         monacoRef.current.monaco.languages.registerCompletionItemProvider(
@@ -498,11 +465,7 @@ export default forwardRef(
               value={activeTheme}
               onChange={async (e) => {
                 const newTheme = e.target.value;
-                await fetchTheme(
-                  newTheme,
-                  themes[newTheme]!,
-                  monacoRef.current,
-                );
+                await fetchTheme(newTheme, monacoRef.current);
                 setActiveTheme(newTheme);
                 globalThis.localStorage.setItem("monaco-theme", newTheme);
               }}
