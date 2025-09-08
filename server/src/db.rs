@@ -792,6 +792,21 @@ pub async fn paginated_query(
     sort: Option<Sort>,
 ) -> eyre::Result<PaginatedQueryResult> {
     let raw_query = parse_query(raw_query);
+
+    // DDL queries can't be counted/paginated like normal queries, but we
+    // still support a pagination wrapper around their results; they'll always
+    // return a single result representing the DDL command's output
+    let query_type = query_type(&raw_query);
+    if let QueryType::ModifyData | QueryType::ModifyStructure = query_type {
+        let affected_rows = client.execute(&raw_query, &[]).await?;
+
+        return Ok(match query_type {
+            QueryType::ModifyData => PaginatedQueryResult::ModifyData { affected_rows },
+            QueryType::ModifyStructure => PaginatedQueryResult::ModifyStructure,
+            _ => unreachable!(),
+        });
+    }
+
     let inner_stmt = prepare(&client, &raw_query).await?;
 
     let filter_prefix = format!(
@@ -856,20 +871,6 @@ pub async fn paginated_query(
         .zip(stmt.params().iter().cloned())
         .map(|(param, param_type)| from_json(param, param_type))
         .collect::<Result<Vec<_>, _>>()?;
-
-    // DDL queries can't be counted/paginated like normal queries, but we
-    // still support a pagination wrapper around their results; they'll always
-    // return a single result representing the DDL command's output
-    let query_type = query_type(&base_query);
-    if let QueryType::ModifyData | QueryType::ModifyStructure = query_type {
-        let affected_rows = client.execute(&stmt.inner, &dyn_params(&params)).await?;
-
-        return Ok(match query_type {
-            QueryType::ModifyData => PaginatedQueryResult::ModifyData { affected_rows },
-            QueryType::ModifyStructure => PaginatedQueryResult::ModifyStructure,
-            _ => unreachable!(),
-        });
-    }
 
     let count_query = format!("SELECT COUNT(*) FROM (\n{base_query}\n) _;");
 
