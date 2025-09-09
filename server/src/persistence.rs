@@ -2,6 +2,7 @@ use aes_gcm::{
     Aes256Gcm, Key,
     aead::{Aead, AeadCore, KeyInit, OsRng},
 };
+use dpi::{LogicalPosition, LogicalSize};
 use serde::{Deserialize, Serialize};
 use std::os::unix::process::ExitStatusExt;
 use std::sync::OnceLock;
@@ -39,7 +40,27 @@ fn encryption_key() -> &'static Key<Aes256Gcm> {
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct Store {
+    #[serde(default)]
     pub connections: Vec<Connection>,
+    #[serde(default)]
+    pub window: WindowState,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct WindowState {
+    pub size: LogicalSize<u32>,
+    pub position: Option<LogicalPosition<u32>>,
+}
+
+impl Default for WindowState {
+    fn default() -> Self {
+        Self {
+            size: LogicalSize::new(1400, 900),
+            // `None` will use the platform-specific default, which is
+            // somewhere close to the middle of the display on macOS
+            position: None,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

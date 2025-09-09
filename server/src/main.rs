@@ -111,7 +111,7 @@ async fn main() -> eyre::Result<()> {
         .with(poem::middleware::Cors::new())
         .with(poem::middleware::Tracing)
         .around(routes::format_eyre)
-        .data(state);
+        .data(Arc::clone(&state));
 
     let server_port = if cfg!(feature = "bundle") {
         // when bundled, have the system assign us a port
@@ -137,7 +137,7 @@ async fn main() -> eyre::Result<()> {
 
     // if we're bundling, open the webview in the main thread
     #[cfg(feature = "bundle")]
-    dbc::server::WebView::launch(_server_port).await;
+    dbc::server::WebView::launch(state, _server_port).await;
 
     // otherwise, just block on the server task
     #[cfg(not(feature = "bundle"))]

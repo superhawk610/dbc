@@ -1,7 +1,7 @@
 use poem::{EndpointExt, Route, Server, endpoint::StaticFilesEndpoint};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tao::{
-    dpi::LogicalSize,
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder},
     platform::macos::WindowBuilderExtMacOS,
@@ -20,7 +20,7 @@ pub const VITE_BUILD_VERSION: &str = "{{VITE_BUILD_VERSION}}";
 pub struct WebView;
 
 impl WebView {
-    pub async fn launch(server_port: u16) -> ! {
+    pub async fn launch(state: Arc<crate::State>, server_port: u16) -> ! {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -95,14 +95,23 @@ impl WebView {
             proxy.send_event(UserEvent::MenuEvent(event)).unwrap();
         }));
 
-        let window = WindowBuilder::new()
+        let config = state.config.read().await;
+        let window_state = config.window.clone();
+        drop(config);
+
+        let mut window_builder = WindowBuilder::new()
             .with_title("dbc")
-            .with_inner_size(LogicalSize::new(1400, 900))
+            .with_inner_size(window_state.size)
             .with_title_hidden(true)
             .with_titlebar_transparent(true)
-            .with_fullsize_content_view(true)
-            .build(&event_loop)
-            .unwrap();
+            .with_fullsize_content_view(true);
+
+        if let Some(position) = window_state.position {
+            window_builder = window_builder.with_position(position);
+        }
+
+        let window = window_builder.build(&event_loop).unwrap();
+        let scale_factor = window.scale_factor();
 
         let webview = WebViewBuilder::new()
             .with_url(format!("http://localhost:{asset_port}"))
@@ -117,6 +126,68 @@ impl WebView {
             .build(&window)
             .unwrap();
 
+        // spawn a worker task to persist window position/size with debounce
+        #[derive(Debug)]
+        enum WindowUpdate {
+            Position(dpi::LogicalPosition<u32>),
+            Size(dpi::LogicalSize<u32>),
+        }
+
+        let (tx, rx) = std::sync::mpsc::channel::<WindowUpdate>();
+        tokio::spawn(async move {
+            #[derive(Debug)]
+            enum Action {
+                Close,
+                Persist,
+                Update(WindowUpdate),
+            }
+
+            let timeout = std::time::Duration::from_millis(500);
+            let mut window_state = window_state;
+            let mut dirty = false;
+
+            loop {
+                // only debounce if we have a pending write to avoid spinning
+                // through the `Err` branch when nothing is happening
+                let action = if dirty {
+                    match rx.recv_timeout(timeout) {
+                        Ok(msg) => Action::Update(msg),
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Action::Persist,
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Action::Close,
+                    }
+                } else {
+                    match rx.recv() {
+                        Ok(msg) => Action::Update(msg),
+                        Err(_) => Action::Close,
+                    }
+                };
+
+                match action {
+                    Action::Close => break,
+
+                    Action::Update(update) => {
+                        match update {
+                            WindowUpdate::Position(pos) => window_state.position = Some(pos),
+                            WindowUpdate::Size(size) => window_state.size = size,
+                        }
+
+                        dirty = true;
+                    }
+
+                    Action::Persist => {
+                        if dirty {
+                            let mut config = state.config.write().await;
+                            config.window.position = window_state.position;
+                            config.window.size = window_state.size;
+                            config.persist().unwrap();
+
+                            dirty = false;
+                        }
+                    }
+                }
+            }
+        });
+
         event_loop.run(move |event, _, control_flow| {
             *control_flow = ControlFlow::Wait;
 
@@ -125,6 +196,26 @@ impl WebView {
                     event: WindowEvent::CloseRequested,
                     ..
                 } => *control_flow = ControlFlow::Exit,
+
+                Event::WindowEvent {
+                    event: WindowEvent::Resized(size),
+                    ..
+                } => {
+                    let _ = tx.send(WindowUpdate::Size(dpi::LogicalSize::from_physical(
+                        size,
+                        scale_factor,
+                    )));
+                }
+
+                Event::WindowEvent {
+                    event: WindowEvent::Moved(position),
+                    ..
+                } => {
+                    let _ = tx.send(WindowUpdate::Position(dpi::LogicalPosition::from_physical(
+                        position,
+                        scale_factor,
+                    )));
+                }
 
                 Event::UserEvent(UserEvent::MenuEvent(ev)) => match ev.id.0.as_str() {
                     cmd @ ("settings" | "new-tab" | "toggle-results") => {
