@@ -1,11 +1,13 @@
-import React from "react";
+import { Fragment, useEffect, useState } from "react";
 import { HiChevronDown as DropdownIcon } from "react-icons/hi";
 import { THEMES } from "../const.ts";
 
-const ACTIVE_THEME = globalThis.localStorage.getItem("theme");
-
-// if enabled, make sure to remove the init script in `index.html`
 const ENABLE_CONTROLLER = false;
+
+export function initializeTheme() {
+  const theme = globalThis.localStorage.getItem("theme");
+  if (theme) document.documentElement.dataset.theme = theme;
+}
 
 export interface Props {
   className?: string;
@@ -16,6 +18,24 @@ export interface Props {
 export default function ThemeSelect(
   { className, buttonClassName, dropdownPosition = "left" }: Props,
 ) {
+  const [theme, setTheme] = useState<string | null>(
+    globalThis.localStorage.getItem("theme"),
+  );
+
+  useEffect(() => {
+    if (theme) {
+      if (!ENABLE_CONTROLLER) {
+        document.documentElement.dataset.theme = theme;
+      }
+      globalThis.localStorage.setItem("theme", theme);
+    } else {
+      if (!ENABLE_CONTROLLER) {
+        delete document.documentElement.dataset.theme;
+      }
+      globalThis.localStorage.removeItem("theme");
+    }
+  }, [theme]);
+
   return (
     <div
       className={`dropdown ${
@@ -43,42 +63,32 @@ export default function ThemeSelect(
             } btn btn-sm btn-block btn-ghost justify-start checked:bg-base-100`}
             aria-label="Default (system)"
             defaultValue=""
-            defaultChecked={!ACTIVE_THEME}
-            onChange={() => {
-              if (!ENABLE_CONTROLLER) {
-                delete document.documentElement.dataset.theme;
-              }
-
-              globalThis.localStorage.removeItem("theme");
-            }}
+            checked={!theme}
+            onChange={() => setTheme(null)}
           />
         </li>
 
-        {THEMES.map((theme) => (
-          <React.Fragment key={theme}>
+        {THEMES.map((t) => (
+          <Fragment key={t}>
             <li>
               <input
                 type="radio"
                 name="theme-dropdown"
-                className="theme-controller btn btn-sm btn-block btn-ghost justify-start checked:bg-base-100 checked:text-base-content"
-                aria-label={theme === "cmyk"
+                className={`${
+                  ENABLE_CONTROLLER ? "theme-controller" : ""
+                } btn btn-sm btn-block btn-ghost justify-start checked:bg-base-100 checked:text-base-content`}
+                aria-label={t === "cmyk"
                   ? "CMYK"
-                  : theme.charAt(0).toUpperCase() + theme.slice(1)}
-                defaultValue={theme}
-                defaultChecked={theme === ACTIVE_THEME}
-                onChange={() => {
-                  if (!ENABLE_CONTROLLER) {
-                    document.documentElement.dataset.theme = theme;
-                  }
-
-                  globalThis.localStorage.setItem("theme", theme);
-                }}
+                  : t.charAt(0).toUpperCase() + t.slice(1)}
+                defaultValue={t}
+                checked={t === theme}
+                onChange={() => setTheme(t)}
               />
             </li>
-            {theme === "dark" && (
+            {t === "dark" && (
               <li className="border-b border-base-content/10 my-0" />
             )}
-          </React.Fragment>
+          </Fragment>
         ))}
       </ul>
     </div>

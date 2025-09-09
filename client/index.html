@@ -8,10 +8,6 @@
   <body class="overflow-hidden">
     <div id="root"></div>
     <script type="module" src="/src/local-storage.ts"></script>
-    <script type="text/javascript">
-      const theme = globalThis.localStorage.getItem('theme');
-      if (theme) document.documentElement.dataset.theme = theme;
-    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

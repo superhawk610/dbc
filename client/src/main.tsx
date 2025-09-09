@@ -1,6 +1,7 @@
 import "./index.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { initializeTheme } from "./components/ThemeSelect.tsx";
 import App from "./App.tsx";
 import ipc from "./ipc.ts";
 
@@ -47,6 +48,8 @@ document.addEventListener("mousedown", (ev) => {
     ipc("drag-start");
   }
 });
+
+initializeTheme();
 
 createRoot(document.getElementById("root") as HTMLElement).render(
   <StrictMode>
