@@ -355,7 +355,13 @@ export default function QueryResults({
                           <div className="absolute pointer-events-none z-10 inset-0 ring-2 ring-primary" />
                         )}
                         <div className="flex items-center justify-between overflow-hidden">
-                          <div className="truncate max-w-[600px]">
+                          <div
+                            className={`truncate ${
+                              page.entries.columns.length > 1
+                                ? "max-w-[600px]"
+                                : "max-w-[98vw]"
+                            }`}
+                          >
                             {value === true
                               ? "true"
                               : value === false

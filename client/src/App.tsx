@@ -441,13 +441,6 @@ function App() {
         >
           <NewTabIcon /> New Tab
         </button>
-        <button
-          type="button"
-          className={`btn btn-sm ${showResults && "btn-primary"}`}
-          onClick={() => setShowResults(!showResults)}
-        >
-          <ListIcon /> Results
-        </button>
       </Navbar>
 
       <div
@@ -644,16 +637,29 @@ function App() {
         data-wry-drag-region
         className="h-[42px] flex items-center gap-2 px-4 py-2 text-sm"
       >
-        <button
-          type="button"
-          title="Toggle table view"
-          className={`btn btn-ghost btn-xs rounded-sm ${
-            showLeftPanel ? "" : "opacity-50"
-          }`}
-          onClick={() => setShowLeftPanel((x) => !x)}
-        >
-          <LeftPanelIcon className="w-4 h-4" />
-        </button>
+        <div className="flex gap-0.5">
+          <button
+            type="button"
+            title="Toggle table view"
+            className={`btn btn-ghost btn-xs px-1 rounded-sm ${
+              showLeftPanel ? "" : "opacity-30"
+            }`}
+            onClick={() => setShowLeftPanel((x) => !x)}
+          >
+            <LeftPanelIcon className="w-4 h-4" />
+          </button>
+
+          <button
+            type="button"
+            title="Toggle query results"
+            className={`btn btn-ghost btn-xs px-1 rounded-sm ${
+              showResults ? "" : "opacity-30"
+            }`}
+            onClick={() => setShowResults((x) => !x)}
+          >
+            <ListIcon className="w-4 h-4" />
+          </button>
+        </div>
 
         {showResults && res && res.type === "select" && res.total_count > 0 && (
           <div className="flex-1">

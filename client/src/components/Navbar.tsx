@@ -1,5 +1,4 @@
 import { HiOutlineDatabase as DatabaseIcon } from "react-icons/hi";
-import ThemeSelect from "./ThemeSelect.tsx";
 import SettingsModal from "./SettingsModal.tsx";
 import StreamModal from "./StreamModal.tsx";
 import Connection from "../models/connection.ts";
@@ -29,7 +28,6 @@ export default function Navbar({ onSaveSettings, children }: Props) {
         <StreamModal />
         {/* )} */}
         <SettingsModal onSave={onSaveSettings} />
-        <ThemeSelect />
       </div>
     </div>
   );

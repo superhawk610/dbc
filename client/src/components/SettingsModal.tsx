@@ -20,6 +20,7 @@ import Connection, {
 } from "../models/connection.ts";
 import ColorRadio from "./form/ColorRadio.tsx";
 import deepEqual from "deep-equal";
+import ThemeSelect from "./ThemeSelect.tsx";
 
 interface SettingsModalBodyProps {
   actions: ModalActions;
@@ -145,14 +146,14 @@ function SettingsModalBody({ actions, onSave }: SettingsModalBodyProps) {
 
   return (
     <div className="flex w-full">
-      <div className="mr-4 p-2 w-48 bg-base-200 rounded-md">
-        <ul className="text-sm py-1 space-y-1">
+      <div className="mr-4 w-52">
+        <ul className="p-2 py-3 bg-base-200 border border-base-300 rounded-md text-xs space-y-1">
           {config.connections.map((conn, idx) => (
             <li key={idx}>
               <button
                 type="button"
                 onClick={() => changeConnection(idx)}
-                className={`px-2 py-0.5 w-full rounded text-left cursor-pointer
+                className={`px-2 py-1 w-full rounded text-left cursor-pointer
                 hover:bg-primary/90 hover:text-primary-content
                 ${
                   connection?.name === conn.name
@@ -182,7 +183,7 @@ function SettingsModalBody({ actions, onSave }: SettingsModalBodyProps) {
             <button
               type="button"
               onClick={() => changeConnection(-1)}
-              className={`px-2 py-0.5 w-full rounded text-left cursor-pointer
+              className={`px-2 py-1 w-full rounded text-left cursor-pointer
                 hover:bg-primary/90 hover:text-primary-content
                 ${connection ? "" : "bg-primary"}`}
             >
@@ -190,11 +191,17 @@ function SettingsModalBody({ actions, onSave }: SettingsModalBodyProps) {
             </button>
           </li>
         </ul>
+
+        <ThemeSelect
+          dropdownPosition="right"
+          className="mt-2 w-full"
+          buttonClassName="w-full px-3.5 font-normal rounded-md border border-base-300 justify-start"
+        />
       </div>
 
       <form
         key={connection?.name}
-        className="flex-1 flex flex-col gap-4"
+        className="-mt-4 flex-1 flex flex-col gap-4"
         onSubmit={handleSubmit}
         onChange={() => setDirty(true)}
       >

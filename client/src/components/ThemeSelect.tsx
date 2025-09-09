@@ -4,26 +4,51 @@ import { THEMES } from "../const.ts";
 
 const ACTIVE_THEME = globalThis.localStorage.getItem("theme");
 
-export default function ThemeSelect() {
+// if enabled, make sure to remove the init script in `index.html`
+const ENABLE_CONTROLLER = false;
+
+export interface Props {
+  className?: string;
+  buttonClassName?: string;
+  dropdownPosition?: "left" | "right";
+}
+
+export default function ThemeSelect(
+  { className, buttonClassName, dropdownPosition = "left" }: Props,
+) {
   return (
-    <div className="dropdown dropdown-end">
-      <div tabIndex={0} role="button" className="btn btn-sm space-x-2">
+    <div
+      className={`dropdown ${
+        dropdownPosition === "left" ? "dropdown-end" : "dropdown-start"
+      } ${className}`}
+    >
+      <div
+        tabIndex={0}
+        role="button"
+        className={`btn btn-sm space-x-2 ${buttonClassName}`}
+      >
         Theme
         <DropdownIcon />
       </div>
       <ul
         tabIndex={0}
-        className="dropdown-content bg-base-300 rounded-box z-1 w-52 p-2 shadow-2xl max-h-[300px] overflow-y-auto"
+        className="dropdown-content mt-1 bg-base-300 rounded-box z-1 w-52 p-2 shadow-2xl max-h-[300px] overflow-y-auto"
       >
         <li>
           <input
             type="radio"
             name="theme-dropdown"
-            className="theme-controller btn btn-sm btn-block btn-ghost justify-start checked:bg-base-100"
+            className={`${
+              ENABLE_CONTROLLER ? "theme-controller" : ""
+            } btn btn-sm btn-block btn-ghost justify-start checked:bg-base-100`}
             aria-label="Default (system)"
             defaultValue=""
             defaultChecked={!ACTIVE_THEME}
             onChange={() => {
+              if (!ENABLE_CONTROLLER) {
+                delete document.documentElement.dataset.theme;
+              }
+
               globalThis.localStorage.removeItem("theme");
             }}
           />
@@ -42,6 +67,10 @@ export default function ThemeSelect() {
                 defaultValue={theme}
                 defaultChecked={theme === ACTIVE_THEME}
                 onChange={() => {
+                  if (!ENABLE_CONTROLLER) {
+                    document.documentElement.dataset.theme = theme;
+                  }
+
                   globalThis.localStorage.setItem("theme", theme);
                 }}
               />
