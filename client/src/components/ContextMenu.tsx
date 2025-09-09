@@ -41,6 +41,7 @@ export interface Item {
 
   // required for scroller items
   maxHeight?: number;
+  maxHeightClass?: string;
   rows?: ReactNode[];
 }
 
@@ -54,6 +55,7 @@ export interface HookProps {
 
 export interface Props extends HookProps {
   width?: number;
+  widthClass?: string;
   getItems: (itemContext: ItemContext) => Item[];
   // Do any additional work needed to display additional information
   // about the items, e.g. fetching row counts. A loading indicator will
@@ -72,6 +74,7 @@ export default function ContextMenu(
     x,
     y,
     width = 256,
+    widthClass = "w-[256px]",
     getItems,
     getItemsExtended,
     onClick,
@@ -159,7 +162,7 @@ export default function ContextMenu(
     <ul
       ref={ref}
       style={style}
-      className={`fixed z-50 w-[${width}px] text-xs bg-base-100 text-base-content
+      className={`fixed z-50 ${widthClass} text-xs bg-base-100 text-base-content
       py-2 rounded-sm overflow-hidden shadow-lg cursor-pointer`}
     >
       {items.map((item, idx) =>
@@ -182,7 +185,7 @@ export default function ContextMenu(
               }`}
             >
               <ul
-                className={`max-h-[${item.maxHeight}px] overflow-y-auto overflow-hidden`}
+                className={`${item.maxHeightClass} overflow-y-auto overflow-hidden`}
               >
                 {item.rows!.map((row, idx) => (
                   <li key={idx} className="py-1 px-3 truncate">

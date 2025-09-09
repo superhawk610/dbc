@@ -46,6 +46,7 @@ export default function TablesPanel(
       <ContextMenu
         {...contextMenuProps}
         width={360}
+        widthClass="w-[360px]"
         getItems={(itemContext) => [
           {
             id: "stats",
@@ -102,6 +103,7 @@ export default function TablesPanel(
             {
               id: "scroller",
               maxHeight: 200,
+              maxHeightClass: "max-h-[200px]",
               rows: columns.map((c) => (
                 <div
                   className="w-full flex justify-between"
