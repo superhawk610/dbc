@@ -9,3 +9,8 @@ export default interface Table {
   // Pretty-printed size of table (from pg_size_pretty)
   table_size_pretty: string;
 }
+
+export interface Column {
+  column_name: string;
+  data_type: string;
+}

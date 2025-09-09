@@ -34,20 +34,24 @@ globalThis.__wry__ = (event: string) => {
   }
 };
 
-// adapted from https://github.com/tauri-apps/tauri/blob/d54f3b95a63a5b24657e2b206f949d15f8013986/crates/tauri/src/window/scripts/drag.js#L13
-document.addEventListener("mousedown", (ev) => {
-  const attr = (ev.target as HTMLElement).getAttribute("data-wry-drag-region");
-  if (
-    attr !== null &&
-    attr !== "false" &&
-    ev.button === 0 &&
-    ev.detail === 1
-  ) {
-    ev.preventDefault();
-    ev.stopImmediatePropagation();
-    ipc("drag-start");
-  }
-});
+if (import.meta.env.VITE_BUNDLED) {
+  // adapted from https://github.com/tauri-apps/tauri/blob/d54f3b95a63a5b24657e2b206f949d15f8013986/crates/tauri/src/window/scripts/drag.js#L13
+  document.addEventListener("mousedown", (ev) => {
+    const attr = (ev.target as HTMLElement).getAttribute(
+      "data-wry-drag-region",
+    );
+    if (
+      attr !== null &&
+      attr !== "false" &&
+      ev.button === 0 &&
+      ev.detail === 1
+    ) {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      ipc("drag-start");
+    }
+  });
+}
 
 initializeTheme();
 

@@ -7,7 +7,7 @@ import {
 } from "monaco-editor";
 import { Language, Parser, Query, Tree } from "web-tree-sitter";
 import { get } from "./api.ts";
-import Table from "./models/table.ts";
+import Table, { Column } from "./models/table.ts";
 import Schema from "./models/schema.ts";
 import { activeQuery } from "./components/editor/utils.ts";
 
@@ -227,7 +227,7 @@ export default class DbcCompletionProvider
         if (aliases[prevToken] || tableNames.has(prevToken)) {
           const table = aliases[prevToken] || prevToken;
 
-          const columns = await get<string[]>(
+          const columns = await get<Column[]>(
             `/db/schemas/${this.context.schema}/tables/${
               unquote(table)
             }/columns`,
@@ -243,12 +243,12 @@ export default class DbcCompletionProvider
           );
 
           completion.suggestions.push(...columns.map((column) => ({
-            label: column,
-            insertText: column,
-            sortText: column === "id" ? "0" : column,
+            label: column.column_name,
+            insertText: column.column_name,
+            sortText: column.column_name === "id" ? "0" : column.column_name,
             kind: languages.CompletionItemKind.Property,
             range: Range.fromPositions(position, position),
-            detail: `${table}.${column}`,
+            detail: `${table}.${column.column_name}`,
           })));
 
           break;

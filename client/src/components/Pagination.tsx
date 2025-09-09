@@ -5,10 +5,12 @@ import {
   HiChevronRight as RightIcon,
 } from "react-icons/hi";
 
-import { PaginatedQueryResult } from "../models/query.ts";
+import { PaginatedSelectQueryResult } from "../models/query.ts";
+
+const fmt = (n: number) => new Intl.NumberFormat().format(n);
 
 export interface Props {
-  query: PaginatedQueryResult;
+  query: PaginatedSelectQueryResult;
   page: number;
   pageSize: number;
   loading?: boolean;
@@ -24,7 +26,9 @@ export default function Pagination(
   return (
     <div data-wry-drag-region className="flex items-center gap-2">
       <div className="mr-auto">
-        Showing {firstRow} - {lastRow} of {query.total_count} rows
+        Showing {fmt(firstRow)} - {fmt(lastRow)} of {fmt(query.total_count)}
+        {" "}
+        rows
 
         {loading && (
           <span className="ml-4 text-sm opacity-50">
@@ -41,11 +45,11 @@ export default function Pagination(
           className="cursor-pointer hover:bg-white/10 rounded-full px-2 py-1 text-center select-ghost appearance-none focus:bg-white/10"
         >
           {new Array(query.total_pages).fill(0).map((_, idx) => (
-            <option key={idx} value={idx + 1}>{idx + 1}</option>
+            <option key={idx} value={idx + 1}>{fmt(idx + 1)}</option>
           ))}
         </select>
         <span>of</span>
-        <span className="ml-1">{query.total_pages}</span>
+        <span className="ml-1">{fmt(query.total_pages)}</span>
       </div>
       <div className="flex items-center">
         <button

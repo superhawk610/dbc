@@ -571,7 +571,7 @@ pub async fn list_tables(client: &Client, schema: &str) -> eyre::Result<QueryRow
 
 pub async fn list_columns(client: &Client, schema: &str, table: &str) -> eyre::Result<QueryResult> {
     let sql = "
-    SELECT column_name
+    SELECT column_name, data_type
     FROM information_schema.columns
     WHERE table_schema = $1
     AND table_name = $2

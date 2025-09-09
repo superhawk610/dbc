@@ -233,14 +233,19 @@ pub async fn get_columns(
     TypedHeader(database): TypedHeader<headers::XDatabase>,
     Data(state): Data<&Arc<crate::State>>,
     Path((schema, table)): Path<(String, String)>,
-) -> eyre::Result<Json<Vec<String>>> {
+) -> eyre::Result<Json<serde_json::Value>> {
     let conn = state.get_conn(connection.into(), database.into()).await?;
     Ok(Json(
         crate::db::list_columns(&conn, &schema, &table)
             .await?
             .row_maps()
             .into_iter()
-            .map(|c| c["column_name"].as_str().unwrap().to_owned())
+            .map(|c| {
+                serde_json::json!({
+                    "column_name": c["column_name"].as_str().unwrap(),
+                    "data_type": c["data_type"].as_str().unwrap(),
+                })
+            })
             .collect(),
     ))
 }

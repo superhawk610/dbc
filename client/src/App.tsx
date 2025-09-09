@@ -479,6 +479,8 @@ function App() {
               />
 
               <TablesPanel
+                connection={connection?.name ?? null}
+                database={database}
                 tables={tables ?? []}
                 loading={tablesLoading}
                 onInsertName={(name) => {
@@ -487,6 +489,19 @@ function App() {
                   editorRef.current!.focus();
                 }}
                 onQueryAll={(name) => {
+                  const query = `SELECT * FROM "${name}";`;
+
+                  editorRef.current!.openTab({
+                    id: `dbc://query/${Date.now()}`,
+                    name: `Query / Table ${name}`,
+                    language: "sql",
+                    contents: query,
+                    icon: "cube",
+                  });
+
+                  submitQuery(query);
+                }}
+                onQuery={(name) => {
                   const query = `SELECT * FROM "${name}" LIMIT 100;`;
 
                   editorRef.current!.openTab({
