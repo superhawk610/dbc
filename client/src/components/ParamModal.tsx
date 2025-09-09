@@ -34,6 +34,7 @@ export default function ParamModal({ params, onSubmit, ...props }: Props) {
                 key={idx}
                 name={param.name}
                 label={`${param.name} (${param.type})`}
+                autoFocus={idx === 0}
               />
             ))}
             <Modal.Actions>

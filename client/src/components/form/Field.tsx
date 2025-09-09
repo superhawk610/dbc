@@ -3,6 +3,7 @@ export interface Props {
   type?: string;
   size?: "md" | "xs";
   label?: string;
+  autoFocus?: boolean;
   defaultValue?: string | number | null;
   defaultChecked?: boolean;
   onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -18,6 +19,7 @@ export default function Field(
     type = "text",
     size = "md",
     label = capitalize(name),
+    autoFocus,
     defaultValue,
     defaultChecked,
     onChange,
@@ -48,6 +50,7 @@ export default function Field(
             name={name}
             defaultValue={defaultValue || undefined}
             onChange={onChange}
+            autoFocus={autoFocus}
           />
         )}
     </label>

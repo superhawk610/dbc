@@ -33,8 +33,10 @@ export function useContextMenu(): ContextMenuHook {
 }
 
 export interface Item {
-  id: string;
-  label: string;
+  id: string | "divider";
+  // required unless `id` is "divider"
+  label?: string;
+  disabled?: boolean;
 }
 
 export interface HookProps {
@@ -109,18 +111,27 @@ export default function ContextMenu(
       className="fixed z-50 w-64 text-xs bg-base-100 text-base-content
       py-2 rounded-sm overflow-hidden shadow-lg cursor-pointer"
     >
-      {items.map((item) => (
-        <li
-          key={item.id}
-          className="py-1 px-3 hover:bg-primary hover:text-primary-content"
-          onClick={() => {
-            onClick(item.id, itemContext);
-            onClose();
-          }}
-        >
-          {item.label}
-        </li>
-      ))}
+      {items.map((item, idx) =>
+        item.id === "divider"
+          ? <li key={idx} className="h-px my-1 bg-base-200" />
+          : (
+            <li
+              key={item.id}
+              className={`py-1 px-3 ${
+                item.disabled
+                  ? "text-gray-500 cursor-default"
+                  : "hover:bg-primary hover:text-primary-content"
+              }`}
+              onClick={() => {
+                if (item.disabled) return;
+                onClick(item.id, itemContext);
+                onClose();
+              }}
+            >
+              {item.label}
+            </li>
+          )
+      )}
     </ul>
   );
 

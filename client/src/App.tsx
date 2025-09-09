@@ -40,7 +40,7 @@ import SettingsModal from "./components/SettingsModal.tsx";
 import ParamModal from "./components/ParamModal.tsx";
 import useConnectionVersion from "./hooks/useConnectionVersion.ts";
 import Field from "./components/form/Field.tsx";
-import SearchableList from "./components/SearchableList.tsx";
+import TablesPanel from "./components/tables/TablesPanel.tsx";
 
 const EDITOR_HEIGHT = { min: 100, default: 400 };
 
@@ -65,8 +65,6 @@ const resultsKey = (query: LastQuery) =>
 
 function App() {
   const editorRef = useRef<EditorRef>(null);
-  const resizeRef = useRef<HTMLDivElement>(null);
-  const resizeHandleRef = useRef<HTMLDivElement>(null);
   const [showResults, setShowResults] = useState(false);
   const [showLeftPanel, setShowLeftPanel] = useState(true);
   const [settingsModalActive, setSettingsModalsActive] = useState(false);
@@ -96,12 +94,27 @@ function App() {
   const [filters, setFilters] = useState<Filter[]>([]);
   const queryRef = useRef({ filters } as LastQuery);
 
+  const resultsResizeRef = useRef<HTMLDivElement>(null);
+  const resultsResizeHandleRef = useRef<HTMLDivElement>(null);
   useResize({
     active: showResults,
-    resizeRef,
-    resizeHandleRef,
-    minHeight: EDITOR_HEIGHT.min,
-    defaultHeight: EDITOR_HEIGHT.default,
+    dimension: "height",
+    resizeRef: resultsResizeRef,
+    resizeHandleRef: resultsResizeHandleRef,
+    sizes: {
+      minimum: EDITOR_HEIGHT.min,
+      default: EDITOR_HEIGHT.default,
+    },
+  });
+
+  const leftPanelResizeRef = useRef<HTMLDivElement>(null);
+  const leftPanelResizeHandleRef = useRef<HTMLDivElement>(null);
+  useResize({
+    active: showLeftPanel,
+    dimension: "width",
+    resizeRef: leftPanelResizeRef,
+    resizeHandleRef: leftPanelResizeHandleRef,
+    sizes: { minimum: 200, default: 360 },
   });
 
   const version = useConnectionVersion(connection?.name);
@@ -444,7 +457,7 @@ function App() {
       </Navbar>
 
       <div
-        ref={resizeRef}
+        ref={resultsResizeRef}
         className={`flex flex-col ${showResults ? "" : "flex-grow-1"}`}
       >
         <Editor
@@ -456,20 +469,39 @@ function App() {
           onClickLabel="Query ⌘⏎"
           hideSidebar={!showLeftPanel}
           sidebar={
-            <div className="w-[300px] flex flex-col">
-              <SearchableList
-                loading={tablesLoading}
-                items={tables?.map((t) => ({
-                  text: t.table_name,
-                  icon: t.type,
-                })) ?? []}
-                onClick={async (table_name) => {
-                  const table = tables?.find((t) =>
-                    t.table_name === table_name
-                  )!;
+            <div
+              ref={leftPanelResizeRef}
+              className="relative flex flex-col pr-1"
+            >
+              <div
+                ref={leftPanelResizeHandleRef}
+                className="absolute top-0 right-0 bg-base-100 h-full w-1 cursor-ew-resize z-10"
+              />
 
+              <TablesPanel
+                tables={tables ?? []}
+                loading={tablesLoading}
+                onInsertName={(name) => {
+                  // insert text into editor at current cursor position
+                  editorRef.current!.insert(name);
+                  editorRef.current!.focus();
+                }}
+                onQueryAll={(name) => {
+                  const query = `SELECT * FROM "${name}" LIMIT 100;`;
+
+                  editorRef.current!.openTab({
+                    id: `dbc://query/${Date.now()}`,
+                    name: `Query / Table ${name}`,
+                    language: "sql",
+                    contents: query,
+                    icon: "cube",
+                  });
+
+                  submitQuery(query);
+                }}
+                onViewDefinition={async (table) => {
                   const res = await get<{ ddl: string }>(
-                    `/db/ddl/schemas/${schema}/${table.type}/${table_name}`,
+                    `/db/ddl/schemas/${schema}/${table.type}/${table.table_name}`,
                     undefined,
                     {
                       headers: {
@@ -479,16 +511,12 @@ function App() {
                     },
                   );
 
-                  // insert text into editor
-                  // editorRef.current!.insert(row[2]);
-                  // editorRef.current!.focus();
-
                   // open new editor tab
                   editorRef.current!.openTab({
-                    id: `dbc://table/${table_name}`,
+                    id: `dbc://table/${table.table_name}`,
                     name: `${
                       table.type === "table" ? "Table" : "View"
-                    } / ${table_name}`,
+                    } / ${table.table_name}`,
                     language: "sql",
                     contents: res.ddl,
                     icon: "database",
@@ -569,7 +597,7 @@ function App() {
       {showResults && (
         <div className="flex-1 flex flex-col bg-base-300 overflow-y-auto">
           <div
-            ref={resizeHandleRef}
+            ref={resultsResizeHandleRef}
             className="bg-base-200 h-1 cursor-ns-resize z-10"
           />
 

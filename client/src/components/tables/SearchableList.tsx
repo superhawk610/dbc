@@ -9,18 +9,23 @@ import {
 
 export type ListItemIcon = "table" | "view" | "materialized_view";
 
-export interface ListItem {
+export interface ListItem<T> {
   text: string;
   icon?: ListItemIcon;
+  accent?: string;
+  inner: T;
 }
 
-export interface Props {
-  items: ListItem[];
+export interface Props<T> {
+  items: ListItem<T>[];
   loading: boolean;
-  onClick: (item: string) => void;
+  onClick: (item: T) => void;
+  onContextMenu?: (ev: React.MouseEvent, item: T) => void;
 }
 
-export default function SearchableList({ items, loading, onClick }: Props) {
+export default function SearchableList<T>(
+  { items, loading, onClick, onContextMenu }: Props<T>,
+) {
   const [query, setQuery] = useState("");
 
   const lowerQuery = query.toLowerCase();
@@ -31,7 +36,7 @@ export default function SearchableList({ items, loading, onClick }: Props) {
   return (
     <>
       <div className="p-2 bg-neutral/20 shadow-lg">
-        <label className="input input-ghost input-sm px-2 py-1 rounded-lg
+        <label className="input input-ghost input-sm w-full px-2 py-1 rounded-lg
         hover:bg-neutral/40 focus-within:bg-neutral/30 focus-within:outline-none">
           <SearchIcon />
           <input
@@ -42,7 +47,7 @@ export default function SearchableList({ items, loading, onClick }: Props) {
           {query.length > 0 && (
             <button
               type="button"
-              className="btn btn-circle btn-ghost btn-xs"
+              className="btn btn-circle btn-ghost btn-xs rounded-sm"
               onClick={() => setQuery("")}
             >
               <XIcon />
@@ -60,7 +65,7 @@ export default function SearchableList({ items, loading, onClick }: Props) {
             </div>
           )
           : (
-            <ul className="pt-0 w-full menu text-xs">
+            <ul className="pr-0 w-full menu text-xs">
               {filteredItems.length === 0
                 ? (
                   <li className="p-4 opacity-50">
@@ -72,9 +77,11 @@ export default function SearchableList({ items, loading, onClick }: Props) {
                     <button
                       type="button"
                       title={item.text}
-                      onClick={() =>
-                        onClick(item.text)}
                       className="block w-full overflow-hidden"
+                      onClick={() =>
+                        onClick(item.inner)}
+                      onContextMenu={(ev) =>
+                        onContextMenu?.(ev, item.inner)}
                     >
                       <div className="flex items-center gap-2">
                         {item.icon && (
@@ -86,7 +93,12 @@ export default function SearchableList({ items, loading, onClick }: Props) {
                               : <MaterializedViewIcon />}
                           </div>
                         )}
-                        <span className="truncate">{item.text}</span>
+                        <span className="truncate flex-1">{item.text}</span>
+                        {item.accent && (
+                          <span className="text-xs opacity-40">
+                            {item.accent}
+                          </span>
+                        )}
                       </div>
                     </button>
                   </li>

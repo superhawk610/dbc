@@ -518,17 +518,33 @@ pub async fn version_info(client: &Client) -> eyre::Result<String> {
 
 pub async fn list_tables(client: &Client, schema: &str) -> eyre::Result<QueryRows> {
     let table_sql = "
-    SELECT 'table' as type, *
-    FROM information_schema.tables
-    WHERE table_schema = $1
-    AND table_type = 'BASE TABLE'
-    ORDER BY table_name";
+    SELECT
+      'table' as type,
+      t.table_schema,
+      t.table_name,
+      c.reltuples as table_rows_est,
+      pg_total_relation_size(concat(t.table_schema, '.', t.table_name)) as table_size,
+      pg_size_pretty(pg_total_relation_size(concat(t.table_schema, '.', t.table_name))) as table_size_pretty
+    FROM information_schema.tables t
+    JOIN pg_namespace n ON n.nspname = t.table_schema
+    JOIN pg_class c ON c.relnamespace = n.oid AND c.relname = t.table_name
+    WHERE t.table_schema = $1
+    AND t.table_type = 'BASE TABLE'
+    ORDER BY t.table_name";
 
     let view_sql = "
-    SELECT 'view' as type, *
-    FROM information_schema.views
-    WHERE table_schema = $1
-    ORDER BY table_name";
+    SELECT
+      'view' as type,
+      v.table_schema,
+      v.table_name,
+      c.reltuples as table_rows_est,
+      -1 as table_size,
+      null as table_size_pretty
+    FROM information_schema.views v
+    JOIN pg_namespace n ON n.nspname = v.table_schema
+    JOIN pg_class c ON c.relnamespace = n.oid AND c.relname = v.table_name
+    WHERE v.table_schema = $1
+    ORDER BY v.table_name";
 
     // let mat_view_sql = format!(
     //     "SELECT 'materialized_view' as type, *
