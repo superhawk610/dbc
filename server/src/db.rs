@@ -1364,6 +1364,15 @@ fn from_json(
 
             Ok(Box::new(date_time) as _)
         }
-        _ => Err(eyre::eyre!("unsupported type: {:?}", type_)),
+        _ => {
+            match type_.name() {
+                // citext is a case-insensitive text type
+                "citext" => json
+                    .as_str()
+                    .ok_or(eyre::eyre!("expected string"))
+                    .map(|s| Box::new(s.to_owned()) as _),
+                _ => Err(eyre::eyre!("unsupported type: {:?}", type_)),
+            }
+        }
     }
 }

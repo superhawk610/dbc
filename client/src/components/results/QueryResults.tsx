@@ -16,8 +16,10 @@ import {
   QueryValue,
 } from "../../models/query.ts";
 import Filters from "./Filters.tsx";
-import ContextMenu, { useContextMenu } from "../ContextMenu.tsx";
+import ContextMenu, { Item, useContextMenu } from "../ContextMenu.tsx";
 import useClickAway from "../../hooks/useClickAway.ts";
+
+const SHOW_CELL_HOVER = false;
 
 interface TimerInterval {
   since: number;
@@ -172,11 +174,16 @@ export default function QueryResults({
                 { id: "sort-none", label: "Disable sorting" },
               ];
             case "cell": {
-              const items = [
-                { id: "copy", label: "Copy" },
-                { id: "view", label: "Open in editor" },
-                { id: "filter-add", label: "Add to filters" },
-              ];
+              const items: Item[] = [];
+
+              if (itemContext.value !== null) {
+                items.push(
+                  { id: "copy", label: "Copy" },
+                  { id: "view", label: "Open in editor" },
+                );
+              }
+
+              items.push({ id: "filter-add", label: "Add to filters" });
 
               if (
                 itemContext.column!.fk_constraint && itemContext.value !== null
@@ -318,7 +325,12 @@ export default function QueryResults({
                     return (
                       <td
                         key={colIdx}
-                        className={`relative overflow-hidden cursor-default border-r border-neutral-500/10 ${
+                        // `overflow-hidden` is required to keep the hover
+                        // effect from spilling into other cells, but it prevents
+                        // the active ring from showing
+                        className={`relative ${
+                          SHOW_CELL_HOVER ? "overflow-hidden" : ""
+                        } cursor-default border-r border-neutral-500/10 ${
                           activeCell?.row === rowIdx ? "bg-primary/30" : ""
                         }`}
                         onClick={() =>
@@ -326,6 +338,16 @@ export default function QueryResults({
                         onContextMenu={(ev) => {
                           setActiveCell({ row: rowIdx, col: colIdx });
                           onContextMenu({ type: "cell", column, value })(ev);
+                        }}
+                        onDoubleClick={(ev) => {
+                          ev.preventDefault();
+
+                          // select all cell text on double click
+                          const sel = globalThis.getSelection();
+                          const range = document.createRange();
+                          range.selectNodeContents(ev.target as Node);
+                          sel!.removeAllRanges();
+                          sel!.addRange(range);
                         }}
                       >
                         {activeCell?.row === rowIdx &&
@@ -354,65 +376,70 @@ export default function QueryResults({
                               : value}
                           </div>
 
-                          <div className="absolute top-0 right-0 z-10 h-full flex items-center gap-1.5
+                          {SHOW_CELL_HOVER && (
+                            <div className="absolute top-0 right-0 z-10 h-full flex items-center gap-1.5
                             pr-2 pl-6 bg-gradient-to-l from-base-100 to-transparent
                             transition-opacity opacity-0 hover:opacity-100">
-                            <button
-                              type="button"
-                              title="Add to filters"
-                              className="h-4 w-4 flex items-center justify-center bg-primary-content text-primary rounded-full cursor-pointer"
-                              onClick={(ev) => {
-                                ev.stopPropagation();
-                                const newFilters = [
-                                  ...filters,
-                                  columnFilter(column, value as string | null),
-                                ];
-                                onFilterChange(newFilters);
-                                onFilterApply(newFilters);
-                              }}
-                            >
-                              <FilterIcon className="h-3 w-3" />
-                            </button>
-
-                            {value !== null && (
                               <button
                                 type="button"
-                                title="View in editor"
-                                className="h-4 w-4 flex items-center justify-center bg-primary-content text-primary rounded-full cursor-pointer"
-                                onClick={() => onViewValueClick(value)}
-                              >
-                                <ViewIcon className="h-3 w-3" />
-                              </button>
-                            )}
-
-                            {value !== null && (
-                              <button
-                                type="button"
-                                title="Copy to clipboard"
+                                title="Add to filters"
                                 className="h-4 w-4 flex items-center justify-center bg-primary-content text-primary rounded-full cursor-pointer"
                                 onClick={(ev) => {
                                   ev.stopPropagation();
-                                  copyToClipboard(value);
+                                  const newFilters = [
+                                    ...filters,
+                                    columnFilter(
+                                      column,
+                                      value as string | null,
+                                    ),
+                                  ];
+                                  onFilterChange(newFilters);
+                                  onFilterApply(newFilters);
                                 }}
                               >
-                                <CopyIcon className="h-3 w-3" />
+                                <FilterIcon className="h-3 w-3" />
                               </button>
-                            )}
 
-                            {column.fk_constraint && value !== null && (
-                              <button
-                                type="button"
-                                title="Query foreign key value"
-                                className="h-4 w-4 flex items-center justify-center bg-primary-content text-primary rounded-full cursor-pointer"
-                                onClick={(ev) => {
-                                  ev.stopPropagation();
-                                  onForeignKeyClick(column, value);
-                                }}
-                              >
-                                <ForeignKeyIcon className="h-3 w-3" />
-                              </button>
-                            )}
-                          </div>
+                              {value !== null && (
+                                <button
+                                  type="button"
+                                  title="View in editor"
+                                  className="h-4 w-4 flex items-center justify-center bg-primary-content text-primary rounded-full cursor-pointer"
+                                  onClick={() => onViewValueClick(value)}
+                                >
+                                  <ViewIcon className="h-3 w-3" />
+                                </button>
+                              )}
+
+                              {value !== null && (
+                                <button
+                                  type="button"
+                                  title="Copy to clipboard"
+                                  className="h-4 w-4 flex items-center justify-center bg-primary-content text-primary rounded-full cursor-pointer"
+                                  onClick={(ev) => {
+                                    ev.stopPropagation();
+                                    copyToClipboard(value);
+                                  }}
+                                >
+                                  <CopyIcon className="h-3 w-3" />
+                                </button>
+                              )}
+
+                              {column.fk_constraint && value !== null && (
+                                <button
+                                  type="button"
+                                  title="Query foreign key value"
+                                  className="h-4 w-4 flex items-center justify-center bg-primary-content text-primary rounded-full cursor-pointer"
+                                  onClick={(ev) => {
+                                    ev.stopPropagation();
+                                    onForeignKeyClick(column, value);
+                                  }}
+                                >
+                                  <ForeignKeyIcon className="h-3 w-3" />
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </td>
                     );

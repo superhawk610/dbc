@@ -630,7 +630,9 @@ function App() {
                 id: `dbc://cell/${Date.now()}`,
                 name: "Cell / Value",
                 language: "text",
-                contents: value!.toString(),
+                contents: (Array.isArray(value) || typeof value === "object")
+                  ? JSON.stringify(value, null, 2)
+                  : value!.toString(),
                 icon: "cube",
               });
             }}

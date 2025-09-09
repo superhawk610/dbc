@@ -145,7 +145,7 @@ function SettingsModalBody({ actions, onSave }: SettingsModalBodyProps) {
 
   return (
     <div className="flex w-full">
-      <div className="mr-4 p-2 w-48 bg-neutral/30 rounded-md">
+      <div className="mr-4 p-2 w-48 bg-base-200 rounded-md">
         <ul className="text-sm py-1 space-y-1">
           {config.connections.map((conn, idx) => (
             <li key={idx}>
