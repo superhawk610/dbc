@@ -11,6 +11,7 @@ dbc = { path = "./server", features = ["bundle"] }
 
 use clap::Parser;
 use dbc::server::webview;
+use std::path::PathBuf;
 use std::process::Command;
 
 /// Build `dbc` into an executable bundle.
@@ -28,19 +29,29 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
+    let target = if args.dev { "debug" } else { "release" };
     let should_install = args.install || !args.dev;
 
     // initialize build directory
-    let asset_dir = dbc::config_dir().join("build");
+    let asset_dir = dbc::asset_dir_in(
+        &PathBuf::from(format!("./server/target/{target}/"))
+            .canonicalize()
+            .unwrap(),
+    );
     step(&format!(
         "Initializing build directory at {}",
         asset_dir.display()
     ));
     if asset_dir.exists() {
         let _ = std::fs::remove_dir_all(&asset_dir);
+    } else {
+        std::fs::create_dir_all(&asset_dir).unwrap();
     }
 
     // build FE bundle
+    step("Running FE bundle setup");
+    exec_in("./client", "./build.sh");
+
     step("Building FE bundle");
     Command::new("deno")
         .current_dir("./client")
@@ -72,6 +83,16 @@ fn main() {
             "cargo bundle --release --features bundle,devtools",
         );
 
+        // copy FE assets to bundle
+        step("Copying FE assets to bundle");
+        exec_in(
+            "./server",
+            &format!(
+                "cp -r {} ./target/release/bundle/osx/dbc.app/Contents/Resources/",
+                asset_dir.display()
+            ),
+        );
+
         // copy to system applications dir
         done("Built successfully");
         step("Installing");
@@ -97,7 +118,7 @@ fn exec(sh: &str) {
 }
 
 fn exec_in(cwd: &str, cmd: &str) {
-    let (bin, args) = cmd.split_once(' ').unwrap();
+    let (bin, args) = cmd.split_once(' ').unwrap_or((cmd, ""));
 
     Command::new(bin)
         .current_dir(cwd)

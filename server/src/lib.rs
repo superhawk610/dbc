@@ -265,6 +265,8 @@ pub(crate) async fn create_pool(conn: &crate::persistence::Connection) -> eyre::
     }
 }
 
+/// The application config directory stores the persistence `store.toml`
+/// and the server-side `localStorage` file for restoring between sessions.
 pub fn config_dir() -> &'static Path {
     static CONFIG_DIR: OnceLock<PathBuf> = OnceLock::new();
     CONFIG_DIR.get_or_init(|| {
@@ -275,5 +277,29 @@ pub fn config_dir() -> &'static Path {
             std::fs::create_dir_all(&config_dir).unwrap();
         }
         config_dir
+    })
+}
+
+/// The application asset directory stores the frontend bundle and other static
+/// assets for the webview. This is populated by the bundle script, and will be
+/// within the `target` directory when running locally and inside the application
+/// bundle when running as a production bundle.
+#[cfg(feature = "bundle")]
+pub fn asset_dir() -> &'static Path {
+    let target_dir = PathBuf::from(std::env::current_exe().unwrap().parent().unwrap());
+    asset_dir_in(&target_dir)
+}
+
+/// See `asset_dir`. The bundle script should use this function, while runtime
+/// code should use `asset_dir` which determines the target directory based on
+/// the current executable path.
+#[cfg(feature = "bundle")]
+pub fn asset_dir_in(target_dir: &Path) -> &'static Path {
+    static ASSET_DIR: OnceLock<PathBuf> = OnceLock::new();
+    ASSET_DIR.get_or_init(|| {
+        #[cfg(debug_assertions)]
+        return target_dir.join("bundle/assets");
+        #[cfg(not(debug_assertions))]
+        return target_dir.parent().unwrap().join("Resources/assets");
     })
 }

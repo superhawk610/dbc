@@ -55,9 +55,10 @@ non-bundled mode, and with minimal tweaks when bundled.
 - [x] Improved modal for parameter input
 - [x] Improve autocomplete for join field names
 - [x] Improve autocomplete by operating on query AST
-- [-] Support non-string data types for filtering
 - [x] Cache editor themes during build to improve launch times
 - [-] Improve script-based password loading (real-time output, timeouts)
+- [-] Support non-string data types for filtering
+- [-] Standalone bundle distribution
 - [ ] Editor format command
 
 ## License

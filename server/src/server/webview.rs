@@ -36,7 +36,7 @@ impl WebView {
             "{}".to_owned()
         };
 
-        let asset_dir = crate::config_dir().join("build");
+        let asset_dir = crate::asset_dir();
 
         // copy `index.template.js` template and replace with runtime variables
         let js_dir = asset_dir.join("assets");
