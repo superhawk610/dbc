@@ -59,14 +59,20 @@ export default function SearchableList<T>(
       <div className="flex-grow basis-0 overflow-y-auto overflow-x-hidden pt-1">
         {loading
           ? (
-            <div className="flex flex-col items-center justify-center h-full">
+            <div className="flex flex-col items-center justify-center h-full opacity-60">
               <span className="loading loading-infinity loading-xl" />
-              <p className="text-xs text-neutral-content/60">Loading</p>
+              <p className="text-xs">Loading</p>
             </div>
           )
           : (
             <ul className="pr-0 w-full menu text-xs">
-              {filteredItems.length === 0
+              {items.length === 0
+                ? (
+                  <li className="p-4 opacity-50">
+                    No tables available
+                  </li>
+                )
+                : filteredItems.length === 0
                 ? (
                   <li className="p-4 opacity-50">
                     No results

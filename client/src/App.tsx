@@ -143,9 +143,12 @@ function App() {
         // select first available connection by default
         if (config.connections.length > 0) {
           setConnection(config.connections[0]);
+        } else {
+          setSettingsModalsActive(true);
         }
       } catch (err) {
         setError((err as Error).message);
+        setShowResults(true);
       } finally {
         setUiLoading(false);
       }
@@ -158,6 +161,7 @@ function App() {
     (async () => {
       try {
         setError(null);
+        setTables(null);
         setUiLoading(true);
 
         const databases = await rawDefaultQuery<Database[]>(
@@ -177,6 +181,7 @@ function App() {
         }
       } catch (err) {
         setError((err as Error).message);
+        setShowResults(true);
       } finally {
         setUiLoading(false);
       }
@@ -209,6 +214,7 @@ function App() {
         }
       } catch (err) {
         setError((err as Error).message);
+        setShowResults(true);
       } finally {
         setUiLoading(false);
       }
@@ -231,6 +237,7 @@ function App() {
         setTables(tables);
       } catch (err) {
         setError((err as Error).message);
+        setShowResults(true);
       } finally {
         setTablesLoading(false);
       }
@@ -409,6 +416,7 @@ function App() {
       const err = _err as NetworkError;
 
       setError(err.message);
+      setShowResults(true);
       setRes(null);
 
       if (err.details && err.details.position !== null) {
@@ -543,7 +551,7 @@ function App() {
           }
           toolbar={
             <>
-              {connections && (
+              {connections && connections.length > 0 && (
                 <ConnectionSelect
                   connections={connections}
                   selected={connection?.name}

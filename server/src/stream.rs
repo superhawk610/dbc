@@ -35,6 +35,12 @@ pub async fn subscribe(tx: Sender<String>) -> Result<(), ()> {
 }
 
 pub async fn broadcast<S: Into<String>>(msg: S) {
+    if let Err(msg) = global().broadcast(format!("{}\n", msg.into())).await {
+        tracing::error!("Failed to broadcast message: {msg}");
+    }
+}
+
+pub async fn broadcast_raw<S: Into<String>>(msg: S) {
     if let Err(msg) = global().broadcast(msg.into()).await {
         tracing::error!("Failed to broadcast message: {msg}");
     }

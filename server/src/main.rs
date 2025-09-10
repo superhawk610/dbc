@@ -32,32 +32,8 @@ async fn main() -> eyre::Result<()> {
         std::process::exit(1);
     };
 
-    // initialize store and load default connection if none are present
-    let mut store = dbc::persistence::Store::load().unwrap();
-    if store.connections.is_empty() {
-        let db_host = std::env::var("DB_HOST").expect("DB_HOST is set");
-        let db_port = std::env::var("DB_PORT")
-            .expect("DB_PORT is set")
-            .parse()
-            .expect("DB_PORT is valid");
-        let db_user = std::env::var("DB_USER").expect("DB_USER is set");
-        let db_pass = std::env::var("DB_PASS").expect("DB_PASS is set");
-        let db_database = std::env::var("DB_DATABASE").expect("DB_DATABASE is set");
-
-        let connection = dbc::persistence::Connection {
-            name: "default".to_owned(),
-            host: db_host,
-            port: db_port,
-            username: db_user,
-            password: Some(db_pass),
-            password_file: None,
-            database: db_database,
-            ssl: false,
-        };
-
-        store.connections.push(connection);
-        store.persist().unwrap();
-    }
+    // load store
+    let store = dbc::persistence::Store::load().unwrap();
 
     let state = Arc::new(dbc::State {
         pools: Mutex::new(HashMap::new()),

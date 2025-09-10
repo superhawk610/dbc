@@ -16,7 +16,7 @@ function StreamModalBody({ actions }: Props) {
     if (!socketRef.current) {
       const socket = createSocket("blah");
 
-      socket.onmessage = ({ data }) => setOutput((o) => o + data + "\n");
+      socket.onmessage = ({ data }) => setOutput((o) => o + data);
       socket.onerror = (err) => console.error(err);
       // socket.onopen = () => socket.send("hello");
 
@@ -44,7 +44,7 @@ function StreamModalBody({ actions }: Props) {
           onClick={closeModal({
             close: () => {
               socketRef.current?.close();
-              actions.close();
+              actions.close(true);
             },
           })}
         >

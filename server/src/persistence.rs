@@ -116,8 +116,13 @@ impl Connection {
             tokio::spawn(async move {
                 let mut buf = [0; 2048];
                 while let Ok(n) = stderr.read(&mut buf).await {
+                    // once the process exits, break
+                    if n == 0 {
+                        break;
+                    }
+
                     let line = String::from_utf8_lossy(&buf[..n]);
-                    crate::stream::broadcast(line).await;
+                    crate::stream::broadcast_raw(line).await;
                 }
             });
 

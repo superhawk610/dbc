@@ -175,9 +175,11 @@ function SettingsModalBody({ actions, onSave }: SettingsModalBodyProps) {
             </li>
           ))}
 
-          <li>
-            <div className="divider m-0" />
-          </li>
+          {config.connections.length > 0 && (
+            <li>
+              <div className="divider m-0" />
+            </li>
+          )}
 
           <li>
             <button
@@ -185,7 +187,7 @@ function SettingsModalBody({ actions, onSave }: SettingsModalBodyProps) {
               onClick={() => changeConnection(-1)}
               className={`px-2 py-1 w-full rounded text-left cursor-pointer
                 hover:bg-primary/90 hover:text-primary-content
-                ${connection ? "" : "bg-primary"}`}
+                ${connection ? "" : "bg-primary text-primary-content"}`}
             >
               Add New...
             </button>
