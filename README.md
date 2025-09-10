@@ -59,6 +59,7 @@ non-bundled mode, and with minimal tweaks when bundled.
 - [-] Improve script-based password loading (real-time output, timeouts)
 - [-] Support non-string data types for filtering
 - [-] Standalone bundle distribution
+- [ ] Improved first run experience
 - [ ] Editor format command
 
 ## License

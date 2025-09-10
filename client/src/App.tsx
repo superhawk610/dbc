@@ -475,7 +475,8 @@ function App() {
             >
               <div
                 ref={leftPanelResizeHandleRef}
-                className="absolute top-0 right-0 bg-base-100 h-full w-1 cursor-ew-resize z-10"
+                className="absolute top-0 right-0 bg-base-100 h-full w-1 cursor-ew-resize z-10
+                transition-colors hover:delay-150 hover:bg-primary hover:ring-primary hover:ring-0.5"
               />
 
               <TablesPanel
@@ -613,7 +614,8 @@ function App() {
         <div className="flex-1 flex flex-col bg-base-300 overflow-y-auto">
           <div
             ref={resultsResizeHandleRef}
-            className="bg-base-200 h-1 cursor-ns-resize z-10"
+            className="bg-base-200 h-1 cursor-ns-resize z-10
+            transition-colors hover:delay-150 hover:bg-primary hover:ring-primary hover:ring-0.5"
           />
 
           <QueryResults
