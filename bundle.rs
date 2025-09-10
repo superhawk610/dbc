@@ -93,6 +93,16 @@ fn main() {
             ),
         );
 
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        std::fs::write(
+            "./server/target/release/bundle/osx/dbc.app/Contents/Resources/assets/.timestamp",
+            format!("{}", timestamp),
+        )
+        .unwrap();
+
         // copy to system applications dir
         done("Built successfully");
         step("Installing");

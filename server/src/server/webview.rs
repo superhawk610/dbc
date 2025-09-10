@@ -36,7 +36,45 @@ impl WebView {
             "{}".to_owned()
         };
 
-        let asset_dir = crate::asset_dir();
+        let bundle_asset_dir = crate::asset_dir();
+        let asset_dir = if cfg!(debug_assertions) {
+            // when running locally, no need for extra effort
+            bundle_asset_dir.to_owned()
+        } else {
+            // when running bundled, we have to do some extra work
+            // to avoid breaking macOS codesign (an application
+            // can't modify its own bundle at runtime)
+            //
+            // if this is the first time we've run on this asset version,
+            // copy the bundled assets to the config directory; otherwise,
+            // use the previously-copied assets
+            let asset_dir = crate::config_dir().join("assets");
+
+            // if the output directory doesn't already exist, create it
+            let mut should_copy = !asset_dir.exists();
+
+            // if it does already exist, make sure it's the same version;
+            // if it's an older version, remove it and recreate it
+            if !should_copy {
+                let source_ts = std::fs::read_to_string(bundle_asset_dir.join(".timestamp")).ok();
+                let target_ts = std::fs::read_to_string(asset_dir.join(".timestamp")).ok();
+                if source_ts != target_ts {
+                    std::fs::remove_dir_all(&asset_dir).unwrap();
+                    should_copy = true;
+                }
+            }
+
+            if should_copy {
+                fs_extra::copy_items(
+                    &[bundle_asset_dir],
+                    asset_dir.parent().unwrap(),
+                    &fs_extra::dir::CopyOptions::new(),
+                )
+                .unwrap();
+            }
+
+            asset_dir
+        };
 
         // copy `index.template.js` template and replace with runtime variables
         let js_dir = asset_dir.join("assets");
