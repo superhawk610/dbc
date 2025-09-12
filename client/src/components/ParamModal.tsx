@@ -29,14 +29,16 @@ export default function ParamModal({ params, onSubmit, ...props }: Props) {
       {(actions) => (
         <Modal.Body>
           <form onSubmit={(ev) => handleSubmit(ev, actions)}>
-            {params.map((param, idx) => (
-              <Field
-                key={idx}
-                name={param.name}
-                label={`${param.name} (${param.type})`}
-                autoFocus={idx === 0}
-              />
-            ))}
+            <div className="flex flex-col gap-4">
+              {params.map((param, idx) => (
+                <Field
+                  key={idx}
+                  name={param.name}
+                  label={`${param.name} (${param.type})`}
+                  autoFocus={idx === 0}
+                />
+              ))}
+            </div>
             <Modal.Actions>
               <button type="submit" className="btn btn-primary">Submit</button>
               <button

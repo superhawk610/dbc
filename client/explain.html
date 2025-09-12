@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>dbc &middot; Explain</title>
+    <style type="text/css">
+      html,
+      body,
+      #root,
+      .plan-container {
+        height: 100%;
+      }
+
+      .nav-item {
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module">
+      import { createApp } from 'vue';
+      import { Plan } from 'pev2';
+      import VueTippy from 'vue-tippy';
+
+      import 'bootstrap';
+      import 'bootstrap/dist/css/bootstrap.min.css';
+      import 'pev2/dist/pev2.css';
+
+      const qs = new URLSearchParams(globalThis.location.search);
+      const plan = qs.get('plan');
+      const query = qs.get('query');
+
+      const app = createApp({
+        components: { pev2: Plan },
+        data: () => ({ plan, query }),
+        template: "<pev2 :plan-source='plan' :plan-query='query' />",
+      });
+
+      app.use(VueTippy, { defaultProps: { theme: 'light' } });
+      app.mount(document.getElementById('root'));
+    </script>
+  </body>
+</html>

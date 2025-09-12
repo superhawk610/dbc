@@ -16,6 +16,7 @@ import {
   QueryValue,
 } from "../../models/query.ts";
 import Filters from "./Filters.tsx";
+import ExplainVisualize from "../explain/ExplainVisualize.tsx";
 import ContextMenu, { Item, useContextMenu } from "../ContextMenu.tsx";
 import useClickAway from "../../hooks/useClickAway.ts";
 
@@ -143,6 +144,10 @@ export default function QueryResults({
         </button>
       </div>
     );
+  }
+
+  if (page.type === "explain") {
+    return <ExplainVisualize plan={page.plan} query={page.query} />;
   }
 
   if (page.type === "modify-data" || page.type === "modify-structure") {

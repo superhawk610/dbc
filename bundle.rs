@@ -83,6 +83,13 @@ fn main() {
             "cargo bundle --release --features bundle,devtools",
         );
 
+        // write timestamp (used to determine whether to re-copy bundle assets on launch)
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        std::fs::write(asset_dir.join(".timestamp"), format!("{}", timestamp)).unwrap();
+
         // copy FE assets to bundle
         step("Copying FE assets to bundle");
         exec_in(
@@ -93,19 +100,10 @@ fn main() {
             ),
         );
 
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        std::fs::write(
-            "./server/target/release/bundle/osx/dbc.app/Contents/Resources/assets/.timestamp",
-            format!("{}", timestamp),
-        )
-        .unwrap();
-
         // copy to system applications dir
         done("Built successfully");
         step("Installing");
+        exec("rm -rf /Applications/dbc.app");
         exec("cp -r ./server/target/release/bundle/osx/dbc.app /Applications");
 
         done("Installed to /Applications/dbc.app");

@@ -297,6 +297,13 @@ pub enum PaginatedQueryResult {
     },
 
     ModifyStructure,
+
+    Explain {
+        /// The query that was executed.
+        query: String,
+        /// The query execution plan.
+        plan: String,
+    },
 }
 
 pub type QueryRows = Vec<HashMap<String, serde_json::Value>>;
@@ -814,13 +821,48 @@ pub async fn paginated_query(
     // return a single result representing the DDL command's output
     let query_type = query_type(&raw_query);
     if let QueryType::ModifyData | QueryType::ModifyStructure = query_type {
-        let affected_rows = client.execute(&raw_query, &[]).await?;
+        let (stmt, params) = prepare_params(client, &raw_query, params).await?;
+        let affected_rows = client.execute(&stmt.inner, &dyn_params(&params)).await?;
 
         return Ok(match query_type {
             QueryType::ModifyData => PaginatedQueryResult::ModifyData { affected_rows },
             QueryType::ModifyStructure => PaginatedQueryResult::ModifyStructure,
             _ => unreachable!(),
         });
+    }
+
+    // EXPLAIN queries just return a plan and are handled specially by the FE
+    if let QueryType::Explain = query_type {
+        let (stmt, params) = prepare_params(client, &raw_query, params).await?;
+        let rows = client.query(&stmt.inner, &dyn_params(&params)).await?;
+
+        let first_row = rows.get(0).unwrap();
+        use tokio_postgres::types::Type;
+        match first_row.columns()[0].type_() {
+            &Type::JSON => {
+                // with `FORMAT JSON`, everything's in the first row
+                return Ok(PaginatedQueryResult::Explain {
+                    query: raw_query,
+                    plan: serde_json::to_string(&first_row.get::<_, serde_json::Value>(0)).unwrap(),
+                });
+            }
+
+            &Type::TEXT => {
+                // with `FORMAT TEXT`, output is newline-delimited across all rows
+                return Ok(PaginatedQueryResult::Explain {
+                    query: raw_query,
+                    plan: rows
+                        .iter()
+                        .map(|row| row.get::<_, &str>(0))
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                });
+            }
+
+            type_ => {
+                panic!("Unexpected EXPLAIN result type: {type_}");
+            }
+        }
     }
 
     let inner_stmt = prepare(&client, &raw_query).await?;
@@ -870,23 +912,15 @@ pub async fn paginated_query(
         .filter_map(|f| f.uses_param().then(|| f.value.clone()))
         .collect::<Vec<_>>();
 
-    let stmt = prepare(&client, &filtered_query).await?;
+    let params = params
+        .into_iter()
+        .cloned()
+        .chain(filter_params.into_iter())
+        .collect::<Vec<_>>();
 
-    if stmt.params().len() != params.len() + filter_params.len() {
-        eyre::bail!(
-            "Expected {} params, got {}",
-            stmt.params().len() - filter_params.len(),
-            params.len()
-        );
-    }
+    let (stmt, params) = prepare_params(&client, &filtered_query, &params).await?;
 
     let base_query = stmt.sql.as_str();
-    let params = params
-        .iter()
-        .chain(filter_params.iter())
-        .zip(stmt.params().iter().cloned())
-        .map(|(param, param_type)| from_json(param, param_type))
-        .collect::<Result<Vec<_>, _>>()?;
 
     let count_query = format!("SELECT COUNT(*) FROM (\n{base_query}\n) _;");
 
@@ -981,6 +1015,30 @@ pub async fn prepare(client: &Client, raw_sql: &str) -> eyre::Result<PreparedSta
         inner: stmt,
         columns,
     })
+}
+
+pub async fn prepare_params(
+    client: &Client,
+    raw_sql: &str,
+    params: &[serde_json::Value],
+) -> eyre::Result<(PreparedStatement, Vec<Box<dyn ToSql + Sync + Send>>)> {
+    let stmt = prepare(&client, raw_sql).await?;
+
+    if stmt.params().len() != params.len() {
+        eyre::bail!(
+            "Expected {} params, got {}",
+            stmt.params().len(),
+            params.len()
+        );
+    }
+
+    let params = params
+        .iter()
+        .zip(stmt.params().iter().cloned())
+        .map(|(param, param_type)| from_json(param, param_type))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok((stmt, params))
 }
 
 pub async fn query(
@@ -1207,6 +1265,8 @@ enum QueryType {
     ModifyData,
     /// DDL CREATE / ALTER / DROP / TRUNCATE / COMMENT statement
     ModifyStructure,
+    /// EXPLAIN statement
+    Explain,
 }
 
 fn query_type(query: &str) -> QueryType {
@@ -1215,6 +1275,7 @@ fn query_type(query: &str) -> QueryType {
 
     for token in tokens {
         match token {
+            "explain" => return QueryType::Explain,
             "insert" | "update" | "delete" => return QueryType::ModifyData,
             "create" | "alter" | "drop" | "truncate" | "comment" => {
                 return QueryType::ModifyStructure;
@@ -1253,6 +1314,7 @@ fn col_supported(col: &tokio_postgres::Column) -> bool {
     }
 }
 
+// FIXME: add support for *_ARRAY types
 fn to_json(
     row: &tokio_postgres::Row,
     col: &tokio_postgres::Column,

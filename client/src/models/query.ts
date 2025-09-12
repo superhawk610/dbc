@@ -87,7 +87,8 @@ export interface Sort {
 export type PaginatedQueryResult =
   | PaginatedSelectQueryResult
   | PaginatedModifyDataQueryResult
-  | PaginatedModifyStructureQueryResult;
+  | PaginatedModifyStructureQueryResult
+  | PaginatedExplainQueryResult;
 
 export interface PaginatedSelectQueryResult {
   type: "select";
@@ -107,6 +108,12 @@ export interface PaginatedModifyDataQueryResult {
 
 export interface PaginatedModifyStructureQueryResult {
   type: "modify-structure";
+}
+
+export interface PaginatedExplainQueryResult {
+  type: "explain";
+  query: string;
+  plan: string;
 }
 
 export interface QueryParam {
