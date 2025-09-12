@@ -7,6 +7,7 @@ import React, {
 } from "react";
 import { useImmer } from "use-immer";
 import type { Draft } from "immer";
+import { format as sqlFormat } from "sql-formatter";
 import { Editor as MonacoEditor, loader, Monaco } from "@monaco-editor/react";
 import { editor as editorNS, MarkerSeverity, Range, Uri } from "monaco-editor";
 import {
@@ -304,6 +305,57 @@ export default forwardRef(
       // grab editor focus at 2nd line by default
       // editor.setPosition({ lineNumber: 2, column: 0 });
       // editor.focus();
+
+      editor.addAction({
+        id: "format-document-action",
+        label: "Format Document",
+        keybindings: [
+          monacoRef.current!.monaco.KeyMod.CtrlCmd |
+          monacoRef.current!.monaco.KeyCode.KeyF,
+        ],
+        contextMenuGroupId: "2_commands",
+        run: () => {
+          const model = editor.getModel()!;
+          const text = model.getValue();
+          const formatted = sqlFormat(text, { language: "postgresql" });
+          editor.executeEdits("format-document-action", [{
+            range: model.getFullModelRange(),
+            text: formatted,
+          }]);
+          editor.pushUndoStop();
+        },
+      });
+
+      editor.addAction({
+        id: "format-query-action",
+        label: "Format Query",
+        keybindings: [
+          monacoRef.current!.monaco.KeyMod.CtrlCmd |
+          monacoRef.current!.monaco.KeyMod.Shift |
+          monacoRef.current!.monaco.KeyCode.KeyF,
+        ],
+        contextMenuGroupId: "2_commands",
+        run: () => {
+          const model = editor.getModel()!;
+          const text = model.getValue();
+          let range = activeQueryRange(text, editor.getPosition()!);
+          if (!range) return;
+
+          // extend to end of last line
+          range = range.setEndPosition(
+            range.endLineNumber,
+            model.getLineMaxColumn(range.endLineNumber),
+          );
+
+          const query = model.getValueInRange(range);
+          const formatted = sqlFormat(query, { language: "postgresql" });
+          editor.executeEdits("format-query-action", [{
+            range,
+            text: formatted,
+          }]);
+          editor.pushUndoStop();
+        },
+      });
 
       // add click action to editor's context menu
       if (onClickLabel) {
