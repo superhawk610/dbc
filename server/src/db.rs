@@ -882,7 +882,7 @@ pub async fn paginated_query(
         .columns()
         .iter()
         .enumerate()
-        .map(|(i, c)| format!("{} AS {}", Filter::col_name(i, c.name()), c.name()))
+        .map(|(i, c)| format!("{} AS \"{}\"", Filter::col_name(i, c.name()), c.name()))
         .collect::<Vec<_>>()
         .join(", ");
 
