@@ -161,6 +161,13 @@ impl WebView {
                     proxy.send_event(UserEvent::IPCEvent(msg)).unwrap();
                 }
             })
+            .with_download_started_handler(|_url, path| {
+                let user_dirs = directories::UserDirs::new().unwrap();
+                let download_root = user_dirs.download_dir().unwrap();
+                let file_name = path.file_name().unwrap();
+                *path = download_root.join(file_name);
+                true
+            })
             .build(&window)
             .unwrap();
 
