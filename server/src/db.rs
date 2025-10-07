@@ -237,7 +237,7 @@ impl Filter {
     }
 
     pub fn col_name(col_idx: usize, col_name: &str) -> String {
-        format!("\"{}.{}\"", col_idx, col_name)
+        format!("\"{}.{}\"", col_idx, col_name.replace('"', "\"\""))
     }
 
     fn sql_op(&self) -> &'static str {
@@ -276,7 +276,8 @@ pub enum PaginatedQueryResult {
         /// 1-indexed page number.
         page: usize,
         /// The number of rows included in a single page.
-        page_size: usize,
+        /// If negative, all available rows are included.
+        page_size: isize,
         /// The number of rows contained in the current page.
         page_count: usize,
         /// The total number of rows available across all pages.
@@ -811,7 +812,7 @@ pub async fn paginated_query(
     params: &[serde_json::Value],
     filters: &[Filter],
     page: usize,
-    page_size: usize,
+    page_size: isize,
     sort: Option<Sort>,
 ) -> eyre::Result<PaginatedQueryResult> {
     let raw_query = parse_query(raw_query);
@@ -882,7 +883,13 @@ pub async fn paginated_query(
         .columns()
         .iter()
         .enumerate()
-        .map(|(i, c)| format!("{} AS \"{}\"", Filter::col_name(i, c.name()), c.name()))
+        .map(|(i, c)| {
+            format!(
+                "{} AS \"{}\"",
+                Filter::col_name(i, c.name()),
+                c.name().replace('"', "\"\"")
+            )
+        })
         .collect::<Vec<_>>()
         .join(", ");
 
@@ -924,14 +931,20 @@ pub async fn paginated_query(
 
     let count_query = format!("SELECT COUNT(*) FROM (\n{base_query}\n) _;");
 
-    let limit = page_size;
-    let offset = (page - 1) * page_size;
-    let page_query = format!(
-        "SELECT * FROM (\n{base_query}\n) _ {} LIMIT {limit} OFFSET {offset};",
-        sort.as_ref()
-            .map(|s| format!("ORDER BY {} {}", s.column_idx + 1, s.direction))
-            .unwrap_or_default()
-    );
+    let (page_query, page_query_offset) = if page_size < 0 {
+        (base_query.to_owned(), 0)
+    } else {
+        let limit = page_size as usize;
+        let offset = (page - 1) * limit;
+        let page_query = format!(
+            "SELECT * FROM (\n{base_query}\n) _ {} LIMIT {limit} OFFSET {offset};",
+            sort.as_ref()
+                .map(|s| format!("ORDER BY {} {}", s.column_idx + 1, s.direction))
+                .unwrap_or_default()
+        );
+
+        (page_query, -16)
+    };
 
     let (mut result, count_result) = futures_util::future::try_join(
         async {
@@ -939,7 +952,7 @@ pub async fn paginated_query(
                 .await
                 .map_err(|err| match err.downcast::<PgError>() {
                     Ok(mut err) => {
-                        err.offset_position(-16 - (filter_prefix.len() as i32));
+                        err.offset_position(page_query_offset - (filter_prefix.len() as i32));
                         eyre::eyre!(err)
                     }
                     Err(err) => err,
@@ -964,7 +977,11 @@ pub async fn paginated_query(
 
     let page_count = result.rows.len();
     let total_count = count_result.rows[0][0].as_u64().unwrap() as usize;
-    let total_pages = total_count.div_ceil(page_size);
+    let total_pages = if page_size < 0 {
+        1
+    } else {
+        total_count.div_ceil(page_size as usize)
+    };
 
     Ok(PaginatedQueryResult::Select {
         page,

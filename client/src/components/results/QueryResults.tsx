@@ -27,12 +27,14 @@ interface TimerInterval {
   interval: number;
 }
 
+export function stringifyValue(value: QueryValue) {
+  return (Array.isArray(value) || typeof value === "object")
+    ? JSON.stringify(value, null, 2)
+    : value.toString();
+}
+
 function copyToClipboard(value: QueryValue) {
-  navigator.clipboard.writeText(
-    (Array.isArray(value) || typeof value === "object")
-      ? JSON.stringify(value, null, 2)
-      : value.toString(),
-  );
+  navigator.clipboard.writeText(stringifyValue(value));
 }
 
 export interface Props {

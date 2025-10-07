@@ -292,7 +292,8 @@ struct QueryParams {
     pub params: Option<Vec<serde_json::Value>>,
     pub sort: Option<crate::db::Sort>,
     pub page: usize,
-    pub page_size: usize,
+    /// If page size is negative, return all rows.
+    pub page_size: isize,
     pub filters: Option<Vec<crate::db::Filter>>,
 }
 

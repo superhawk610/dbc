@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   HiDocumentAdd as NewTabIcon,
+  HiDownload as DownloadIcon,
   HiOutlineDatabase as DatabaseIcon,
   HiOutlineServer as LeftPanelIcon,
   HiViewList as ListIcon,
@@ -23,13 +24,16 @@ import DatabaseSelect from "./components/editor/DatabaseSelect.tsx";
 import SchemaSelect, {
   getLastSchema,
 } from "./components/editor/SchemaSelect.tsx";
-import QueryResults from "./components/results/QueryResults.tsx";
+import QueryResults, {
+  stringifyValue,
+} from "./components/results/QueryResults.tsx";
 import Pagination from "./components/Pagination.tsx";
 import Config from "./models/config.ts";
 import Connection from "./models/connection.ts";
 import {
   Filter,
   PaginatedQueryResult,
+  PaginatedSelectQueryResult,
   QueryParam,
   Sort,
 } from "./models/query.ts";
@@ -62,6 +66,14 @@ interface LastQuery {
 // so we don't accidentally persist a row from a previous query with the same index
 const resultsKey = (query: LastQuery) =>
   `${query.query}-${query.page}-${query.pageSize}-${query.sort}`;
+
+function csvEscape(str: string) {
+  if (['"', ",", "\n"].some((c) => str.includes(c))) {
+    return `"${str.replaceAll('"', '""')}"`;
+  }
+
+  return str;
+}
 
 function App() {
   const editorRef = useRef<EditorRef>(null);
@@ -443,6 +455,51 @@ function App() {
     );
   }
 
+  async function handleDownload() {
+    setError(null);
+    setUiLoading(true);
+
+    try {
+      const res = await paginatedQuery(
+        connection!.name,
+        database!,
+        {
+          query: queryRef.current.query,
+          params: queryRef.current.params,
+          sort: queryRef.current.sort,
+          page: 1,
+          pageSize: -1,
+          filters: queryRef.current.filters,
+          useCache: false,
+        },
+      );
+
+      const entries = (res as PaginatedSelectQueryResult).entries;
+
+      const headerRow = entries.columns.map((col) => csvEscape(col.name)) +
+        "\n";
+
+      const rows = entries.rows.map((row) => {
+        return row.map((val) => csvEscape(stringifyValue(val))).join(",") +
+          "\n";
+      });
+
+      const blob = new Blob([headerRow].concat(rows), { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `query-${Date.now()}.csv`;
+      a.click();
+
+      URL.revokeObjectURL(url);
+    } catch (_err) {
+      const err = _err as NetworkError;
+      setError(err.message);
+    } finally {
+      setUiLoading(false);
+    }
+  }
+
   function openNewTab() {
     editorRef.current!.openTab({
       id: `dbc://query/${Date.now()}`,
@@ -715,7 +772,16 @@ function App() {
         </div>
 
         {showResults && res && res.type === "select" && res.total_count > 0 && (
-          <div className="flex-1">
+          <div className="flex items-center gap-2 flex-1">
+            <button
+              type="button"
+              title="Download query results"
+              className="-ml-1.5 btn btn-ghost btn-xs px-1 rounded-sm"
+              onClick={() => handleDownload()}
+            >
+              <DownloadIcon className="w-4 h-4" />
+            </button>
+
             <Pagination
               query={res}
               page={page}
