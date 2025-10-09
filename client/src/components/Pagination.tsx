@@ -24,7 +24,7 @@ export default function Pagination(
   const firstRow = (query.page - 1) * query.page_size + 1;
   const lastRow = Math.min(firstRow + query.page_size - 1, query.total_count);
   return (
-    <div data-wry-drag-region className="flex items-center gap-2">
+    <div data-wry-drag-region className="flex flex-1 items-center gap-2">
       <div className="mr-auto">
         Showing {fmt(firstRow)} - {fmt(lastRow)} of {fmt(query.total_count)}
         {" "}

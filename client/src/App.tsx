@@ -45,6 +45,7 @@ import ParamModal from "./components/ParamModal.tsx";
 import useConnectionVersion from "./hooks/useConnectionVersion.ts";
 import Field from "./components/form/Field.tsx";
 import TablesPanel from "./components/tables/TablesPanel.tsx";
+import Alerts, { AlertsRef } from "./components/Alerts.tsx";
 
 const EDITOR_HEIGHT = { min: 100, default: 400 };
 
@@ -77,6 +78,8 @@ function csvEscape(str: string) {
 
 function App() {
   const editorRef = useRef<EditorRef>(null);
+  const alertsRef = useRef<AlertsRef>(null);
+
   const [showResults, setShowResults] = useState(false);
   const [showLeftPanel, setShowLeftPanel] = useState(true);
   const [settingsModalActive, setSettingsModalsActive] = useState(false);
@@ -491,6 +494,11 @@ function App() {
       a.download = `query-${Date.now()}.csv`;
       a.click();
 
+      alertsRef.current?.addAlert({
+        style: "success",
+        message: `Downloading to ${a.download}`,
+      });
+
       URL.revokeObjectURL(url);
     } catch (_err) {
       const err = _err as NetworkError;
@@ -520,6 +528,8 @@ function App() {
           <NewTabIcon /> New Tab
         </button>
       </Navbar>
+
+      <Alerts ref={alertsRef} />
 
       <div
         ref={resultsResizeRef}

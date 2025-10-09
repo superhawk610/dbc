@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 @plugin "daisyui" {
   themes: all;
   /*
@@ -19,7 +19,7 @@
 .sql-active-statement-margin {
   @apply bg-primary/10;
   &::after {
-    content: "";
+    content: '';
     position: absolute;
     top: 0;
     left: 0;
@@ -31,4 +31,8 @@
 
 .modal-box {
   max-height: calc(100vh - 4rem);
+}
+
+.alert {
+  @apply py-1 px-2 text-xs gap-2 w-96;
 }
