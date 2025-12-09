@@ -1278,7 +1278,7 @@ fn parse_query(query: &str) -> String {
 enum QueryType {
     /// DML SELECT statement
     Select,
-    /// DML INSERT / UPDATE / DELETE statement
+    /// DML INSERT / UPDATE / DELETE / REFRESH statement
     ModifyData,
     /// DDL CREATE / ALTER / DROP / TRUNCATE / COMMENT statement
     ModifyStructure,
@@ -1293,7 +1293,7 @@ fn query_type(query: &str) -> QueryType {
     for token in tokens {
         match token {
             "explain" => return QueryType::Explain,
-            "insert" | "update" | "delete" => return QueryType::ModifyData,
+            "insert" | "update" | "delete" | "refresh" => return QueryType::ModifyData,
             "create" | "alter" | "drop" | "truncate" | "comment" => {
                 return QueryType::ModifyStructure;
             }
