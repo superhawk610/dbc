@@ -60,6 +60,10 @@ impl PoolState {
     pub async fn status(&mut self) -> eyre::Result<(PoolStatus, String)> {
         match self {
             PoolState::Active(pool) => {
+                if pool.is_unstable().await {
+                    return Ok((PoolStatus::Active, "connection is unstable".to_string()));
+                }
+
                 let conn = pool.get_conn().await?;
                 let version_info = crate::db::version_info(&conn).await?;
                 Ok((PoolStatus::Active, version_info))

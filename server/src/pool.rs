@@ -18,7 +18,9 @@ struct ConnectionPoolInner {
     conn_avail: Sender<()>,
     conns: VecDeque<db::Connection>,
     idle_timeout: std::time::Duration,
+    health_check_timeout: std::time::Duration,
     not_idle: Option<mpsc::Sender<()>>,
+    failed_health_checks: usize,
 }
 
 pub struct CheckedOutConnection {
@@ -82,14 +84,18 @@ impl ConnectionPool {
         // "prime" the channel so that the first call to get_conn() doesn't block
         let _ = tx.send(());
 
+        let health_check_timeout = std::time::Duration::from_secs(config.health_check_timeout_s);
+
         let mut inner = ConnectionPoolInner {
             live: true,
             config,
             conn_avail: tx,
             conns: VecDeque::new(),
             idle_timeout,
+            health_check_timeout,
             // will be set by `spawn_idle_watcher`
             not_idle: None,
+            failed_health_checks: 0,
         };
 
         // spawn initial connection tasks
@@ -181,7 +187,37 @@ impl ConnectionPool {
 
         // get the next available connection, if any; if another thread took the
         // last available connection, wait for another to be checked back in
-        if let Some(conn) = inner.conns.pop_back() {
+        if let Some(mut conn) = inner.conns.pop_back() {
+            // validate connection health before returning it
+            let health_check_timeout = inner.health_check_timeout;
+
+            // perform health check to detect network issues
+            if !conn.health_check(health_check_timeout).await {
+                tracing::warn!("connection health check failed, spawning new connection");
+                conn.kill();
+                inner.failed_health_checks += 1;
+
+                if inner.failed_health_checks >= 2 {
+                    tracing::error!(
+                        "connection unstable after {} consecutive failures, going dormant",
+                        inner.failed_health_checks
+                    );
+                    crate::stream::broadcast("Connection unstable, going dormant. Please check your network/VPN connection.").await;
+                    inner.go_dormant().await;
+                    drop(inner);
+                    return Err(eyre::eyre!(
+                        "connection pool dormant due to consecutive failures"
+                    ));
+                }
+
+                inner.spawn_conn().await?;
+                drop(inner);
+                return Box::pin(self.wait_for_conn()).await;
+            }
+
+            // health check passed, reset failure counter
+            inner.failed_health_checks = 0;
+
             if let Some(not_idle) = inner.not_idle.as_ref() {
                 let _ = not_idle.send(()).await;
             }
@@ -196,6 +232,11 @@ impl ConnectionPool {
         let _ = conn_avail.recv().await;
 
         Box::pin(self.wait_for_conn()).await
+    }
+
+    pub async fn is_unstable(&self) -> bool {
+        let inner = self.inner.lock().await;
+        inner.failed_health_checks > 0
     }
 
     /// Drop all existing connections in the pool and replace them with new connections.
@@ -240,6 +281,7 @@ impl ConnectionPoolInner {
         }
 
         self.live = true;
+        self.failed_health_checks = 0;
 
         Ok(())
     }
@@ -248,5 +290,6 @@ impl ConnectionPoolInner {
         self.live = false;
         self.conns.clear();
         self.not_idle = None;
+        self.failed_health_checks = 0;
     }
 }

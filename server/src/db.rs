@@ -30,6 +30,12 @@ pub struct Config {
     /// How long to wait (in seconds) with no activity before closing all open connections.
     #[builder(default = 30 * 60)]
     pub idle_timeout_s: u64,
+    /// TCP keepalive interval (in seconds) to detect dead connections faster.
+    #[builder(default = 10)]
+    pub tcp_keepalive_s: u64,
+    /// Health check timeout (in seconds) for validating connections.
+    #[builder(default = 5)]
+    pub health_check_timeout_s: u64,
 }
 
 impl Config {
@@ -143,6 +149,25 @@ impl Connection {
         self.rx.take_if(|rx| rx.try_recv().is_ok()).is_some()
     }
 
+    /// Performs a health check on the connection by executing a simple query.
+    ///
+    /// Returns true if the connection is healthy, false otherwise.
+    pub async fn health_check(&self, timeout: std::time::Duration) -> bool {
+        let result = tokio::time::timeout(timeout, self.client.simple_query("SELECT 1")).await;
+
+        match result {
+            Ok(Ok(_)) => true,
+            Ok(Err(e)) => {
+                tracing::warn!("health check failed: {}", e);
+                false
+            }
+            Err(_) => {
+                tracing::warn!("health check timed out");
+                false
+            }
+        }
+    }
+
     /// Kill the connection if it's still alive.
     ///
     /// Calling this method multiple times is safe; any call after the
@@ -158,16 +183,23 @@ pub async fn connect(config: &Config) -> eyre::Result<Connection> {
     let (live_tx, live_rx) = channel();
     let (kill_tx, kill_rx) = channel();
 
+    let mut conn_config = config.conn_str().parse::<tokio_postgres::Config>()?;
+
+    conn_config.keepalives(true);
+    conn_config.keepalives_idle(std::time::Duration::from_secs(config.tcp_keepalive_s));
+    conn_config.keepalives_interval(std::time::Duration::from_secs(config.tcp_keepalive_s / 2));
+    conn_config.keepalives_retries(3);
+    conn_config.connect_timeout(std::time::Duration::from_secs(10));
+
     let client = if config.ssl {
         let tls = MakeTlsConnector::new(TlsConnector::new()?);
-        let (client, conn) = tokio_postgres::connect(&config.conn_str(), tls).await?;
+        let (client, conn) = conn_config.connect(tls).await?;
 
         spawn_conn(conn, live_tx, kill_rx);
 
         client
     } else {
-        let (client, conn) =
-            tokio_postgres::connect(&config.conn_str(), tokio_postgres::NoTls).await?;
+        let (client, conn) = conn_config.connect(tokio_postgres::NoTls).await?;
 
         spawn_conn(conn, live_tx, kill_rx);
 
