@@ -7,7 +7,8 @@ use poem::{
     },
 };
 use serde::Deserialize;
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, sync::Arc, time::Duration};
+use tokio::time::timeout;
 
 pub mod debug;
 pub mod headers;
@@ -55,11 +56,13 @@ pub async fn get_config(
     Data(state): Data<&Arc<crate::State>>,
 ) -> eyre::Result<Json<serde_json::Value>> {
     let config = state.config.read().await;
-    let status = state.status().await?;
-    Ok(Json(serde_json::json!({
-        "connections": config.connections,
-        "status": status
-    })))
+    match timeout(Duration::from_secs(3), state.status()).await? {
+        Ok(status) => Ok(Json(serde_json::json!({
+            "connections": config.connections,
+            "status": status
+        }))),
+        Err(_) => Err(eyre::eyre!("timed out waiting for status")),
+    }
 }
 
 #[derive(Debug, serde::Deserialize)]

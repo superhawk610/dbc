@@ -1,0 +1,16 @@
+# 0.1.0
+
+- Initial release!
+
+# 0.1.1 (2026-01-13)
+
+- Improved network change handling
+
+Previously, if a network change caused a connection to become invalid,
+any requests on that connection would hang for ~100 seconds before finally
+reporting that the connection was closed. Now, we make a health check before
+checking out a connection (`select 1`), and if it fails, we mark the connection
+as unstable and attempt to reconnect.
+
+The settings modal will also display `connection is unstable` instead of hanging
+indefinitely.
