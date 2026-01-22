@@ -373,6 +373,12 @@ export default function QueryResults({
                               ? "true"
                               : value === false
                               ? "false"
+                              : value === ""
+                              ? (
+                                <span className="text-base-content/40">
+                                  (empty string)
+                                </span>
+                              )
                               : value === null
                               ? (
                                 <span className="text-base-content/40">
